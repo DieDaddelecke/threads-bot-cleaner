@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @downloadURL  https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @license      MIT
-// @version      0.8.1
+// @version      0.9.0
 // @description  Bot-Follower auf Threads finden, prüfen und gedrosselt blockieren / Find, review and throttled-block bot followers on Threads.
 // @match        https://www.threads.com/*
 // @match        https://www.threads.net/*
@@ -34,7 +34,7 @@
   const W = window;
   if (W.__TBC__) return;
 
-  const VERSION = '0.8.1';
+  const VERSION = '0.9.0';
   const NS = 'tbc:';
   const PH = '__TBC_TARGET__';
   const API_RE = /\/(api\/)?graphql|\/api\/v1\//i;
@@ -42,7 +42,7 @@
   const META_PARAM_RE = /^(doc_id|__.*|fb_.*|jazoest|lsd|server_timestamps|variables|av|dpr)$/;
   const DEFAULT_PIC_RE = /44884218_345707102882519_2446069589734326272_n|anonymous_profile|default_profile/i;
   const SPAM_RE = /(crypto|bitcoin|\bbtc\b|forex|trading|investor|onlyfans|giveaway|airdrop|\bnft\b|sugar ?(daddy|mommy|baby)|dm me|whatsapp|telegram|cash ?app|💰|📈|🔞)/i;
-  const DEFAULTS = { threshold: 50, minDelay: 20, maxDelay: 40, dailyLimit: 100, autoResume: true, autoCheck: true, checkParallel: 3, checkDelay: 1, skipClear: true };
+  const DEFAULTS = { threshold: 50, minDelay: 20, maxDelay: 40, dailyLimit: 150, autoResume: true, autoCheck: true, checkParallel: 2, checkDelay: 1, skipClear: true, scanBatch: 1000, checkLimit: 300 };
 
   /* ---------------------------------------------------------------- storage */
 
@@ -68,6 +68,7 @@
     stats: store.get('stats', { day: '', count: 0 }),
     pausedUntil: store.get('pausedUntil', 0),
     lastScan: store.get('lastScan', null),
+    scanCursor: store.get('scanCursor', null),
     prevScanTs: store.get('prevScanTs', 0),
     log: store.get('log', []),
     tokens: {},
@@ -85,6 +86,13 @@
     warnedOtherProfile: false,
     resumeTimer: null,
   };
+
+  // Einmalige Umstellung auf die neuen, vorsichtigeren Grenzen (v0.9.0)
+  if (!store.get('mig090', false)) {
+    if (S.settings.dailyLimit > 150) S.settings.dailyLimit = 150;
+    if (S.settings.checkParallel > 2) S.settings.checkParallel = 2;
+    store.set('settings', S.settings); store.set('mig090', true);
+  }
 
   const saveUsersSoon = debounce(() => store.set('users', S.users), 800);
 
@@ -658,6 +666,9 @@
       return true;
     });
     ids.sort((a, b) => score(S.users[b]).s - score(S.users[a]).s);
+    const lim = Math.max(10, st.checkLimit || 300);
+    const later = onlyIds ? 0 : Math.max(0, ids.length - lim);
+    if (later) ids.length = lim;
     const total = ids.length;
     let done = 0; let ok = 0; let errs = 0; let pauseUntil = 0; let aborted = false;
     const t0 = Date.now();
@@ -709,7 +720,8 @@
     persist('users');
     if (total > 1 || errs) {
       log('Profil-Prüfung: ' + ok + ' geprüft' + (skipped ? ', ' + skipped + ' eindeutige übersprungen' : '') +
-        (errs ? ', ' + errs + ' nicht abrufbar' : '') + ' · ' + countSuspicious() + ' verdächtig.', ok ? 'ok' : 'warn');
+        (errs ? ', ' + errs + ' nicht abrufbar' : '') + ' · ' + countSuspicious() + ' verdächtig.' +
+        (later ? ' ' + later + ' weitere warten – nach dem Blocken erneut „Profile prüfen“.' : ''), ok ? 'ok' : 'warn');
     }
     UI.dirty('bar', 'table');
   }
@@ -747,14 +759,15 @@
 
   /* -------------------------------------------------------------- scan */
 
-  async function scan() {
+  async function scan(cont) {
     if (S.scanning) return;
     if (!S.followerTpl) { log('Erst Lernschritt 1: Follower-Liste deines Profils öffnen und etwas scrollen.', 'warn'); return; }
     S.scanning = true; S.stopScan = false; S.scanInfo = 'Scan startet …';
     UI.dirty('bar');
     const seen = new Set();
     const scanStart = Date.now();
-    let cursor = null; let pages = 0; let complete = false; let added = 0;
+    let cursor = cont && S.scanCursor ? S.scanCursor : null; let pages = 0; let complete = false; let added = 0; let batchFull = false;
+    const batch = Math.max(100, S.settings.scanBatch || 1000);
     try {
       while (!S.stopScan) {
         const res = await replay(buildFollowerReq(S.followerTpl, cursor));
@@ -775,12 +788,20 @@
         if (!pg.hasNext || !pg.cursor) { complete = true; break; }
         if (pg.cursor === cursor) { log('Blättern hängt (gleicher Cursor) – Scan beendet.', 'warn'); break; }
         cursor = pg.cursor;
+        if (seen.size >= batch) { batchFull = true; break; }
         await sleep(rand(1500, 3500));
       }
     } catch (e) {
       log('Scan-Fehler: ' + e.message, 'err');
     }
-    if (complete) {
+    if (batchFull) {
+      S.scanCursor = cursor; persist('scanCursor', 'users');
+      S.lastScan = { ts: scanStart, count: seen.size, partial: true }; persist('lastScan');
+      log('Scan: ' + seen.size + ' Follower geladen (Block à ' + batch + '), ' + added + ' neu, ' + countSuspicious() + ' verdächtig. Weitere mit „Nächste ' + batch + ' laden“.', 'ok');
+      if (S.settings.autoCheck) setTimeout(() => checkProfiles(), 1500);
+    }
+    if (complete) S.scanCursor = null, persist('scanCursor');
+    if (complete && !cont) {
       const stillThere = [];
       for (const id of Object.keys(S.users)) {
         const u = S.users[id];
@@ -795,6 +816,9 @@
       S.lastScan = { ts: scanStart, count: seen.size };
       persist('users', 'lastScan', 'prevScanTs');
       log('Scan fertig: ' + seen.size + ' Follower, ' + added + ' neu, ' + countSuspicious() + ' verdächtig.', 'ok');
+      if (S.settings.autoCheck) setTimeout(() => checkProfiles(), 1500);
+    } else if (complete && cont) {
+      log('Scan: Ende der Follower-Liste erreicht (' + seen.size + ' in diesem Block, ' + added + ' neu).', 'ok');
       if (S.settings.autoCheck) setTimeout(() => checkProfiles(), 1500);
     } else if (S.stopScan) {
       log('Scan gestoppt nach ' + seen.size + ' Followern.', 'warn');
@@ -1214,6 +1238,8 @@
           <label>Profile parallel <input type="number" min="1" max="6" data-set="checkParallel"></label>
           <label>Pause Profil (s) <input type="number" min="0.2" step="0.1" data-set="checkDelay"></label>
           <label><input type="checkbox" data-set="skipClear"> eindeutige Bots (≥ 80) nicht prüfen</label>
+          <label>Follower pro Scan <input type="number" min="100" step="100" data-set="scanBatch"></label>
+          <label>Profile pro Prüfung <input type="number" min="10" step="10" data-set="checkLimit"></label>
         </div>
         <p class="muted">Tipp: Zeile anklicken = auswählen, Shift + Klick = alles dazwischen.</p>
         <p class="muted">Die Warteschlange läuft nur, solange ein Threads-Tab offen ist. Konservative Werte senken das Risiko von Aktionssperren.</p>
@@ -1300,7 +1326,8 @@
             this.q('.panel').hidden = !this.open;
             if (this.open) this.dirty('all');
             break;
-          case 'scan': scan(); break;
+          case 'scan': scan(false); break;
+          case 'scanmore': scan(true); break;
           case 'stopscan': S.stopScan = true; break;
           case 'check': checkProfiles(); break;
           case 'stopcheck': S.stopCheck = true; break;
@@ -1468,10 +1495,11 @@
       this.q('.bar').innerHTML =
         '<button class="primary" data-act="scan" ' + (S.followerTpl && !S.scanning ? '' : 'disabled') + '>Follower scannen</button>' +
         (S.scanning ? '<button data-act="stopscan">Scan stoppen</button>' : '') +
+        (!S.scanning && S.scanCursor && S.followerTpl ? '<button data-act="scanmore">Nächste ' + (S.settings.scanBatch || 1000) + ' laden</button>' : '') +
         (S.checking
           ? '<button data-act="stopcheck">Prüfung stoppen</button>'
           : '<button data-act="check" ' + (Object.keys(S.users).length && !S.scanning ? '' : 'disabled') + ' title="Ruft die Profilseiten langsam ab: Follower, Posts, Bio, Links">Profile prüfen</button>') +
-        '<span class="muted">' + esc(S.checkInfo || S.scanInfo || (ls ? 'Letzter Scan: ' + fmtTime(ls.ts) + ' · ' + ls.count + ' Follower' : 'Noch kein Scan')) + '</span>';
+        '<span class="muted">' + esc(S.checkInfo || S.scanInfo || (ls ? 'Letzter Scan: ' + fmtTime(ls.ts) + ' · ' + ls.count + ' Follower' + (S.scanCursor ? ' (weitere vorhanden)' : '') : 'Noch kein Scan')) + '</span>';
     },
 
     renderQueue() {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.0
+- Tageslimit Standard 150 (höhere Werte werden einmalig auf 150 gesenkt).
+- Profil-Prüfung standardmäßig 2 parallel, max. 300 Profile pro Durchlauf.
+- Scan in Blöcken: zuerst die neuesten 1000 Follower, weitere per „Nächste 1000 laden“.
+
 ## 0.8.0
 - Keine externen Schriften mehr (Google Fonts entfernt, Datenschutz).
 - Vorsichtigere Standardwerte für neue Installationen: 20–40 s Pause, max. 100 Blocks/Tag. Bestehende Einstellungen bleiben unverändert.

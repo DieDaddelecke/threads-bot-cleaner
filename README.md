@@ -33,7 +33,7 @@ Updates kommen automatisch über Tampermonkey (sofort: Dashboard → „Nach Upd
 
 ### Tempo & Limits
 
-Standard: **20–40 s** zufällige Pause pro Block, **max. 100 pro Tag**. Sobald Meta bremst, pausiert das Script automatisch 24 h. Alles lässt sich unter „Einstellungen“ anpassen – erhöhe die Werte erst, wenn ein paar Tage ohne Sperre gelaufen sind. Die Warteschlange läuft, solange ein Threads-Tab offen ist, und setzt nach dem Neuladen fort.
+Standard: **20–40 s** zufällige Pause pro Block, **max. 150 pro Tag**. Gescannt werden zunächst die **neuesten 1000 Follower** (weitere per „Nächste 1000 laden“), geprüft werden **max. 300 Profile pro Durchlauf**, 2 parallel. Sobald Meta bremst, pausiert das Script automatisch 24 h. Alles lässt sich unter „Einstellungen“ anpassen – erhöhe die Werte erst, wenn ein paar Tage ohne Sperre gelaufen sind. Die Warteschlange läuft, solange ein Threads-Tab offen ist, und setzt nach dem Neuladen fort.
 
 ## Bot-Score (0–100)
 
@@ -93,7 +93,7 @@ A Tampermonkey userscript that finds bot followers on [Threads](https://www.thre
 3. **Learn the block action:** block one **obvious** bot manually, the normal way.
 4. **Clean up:** click rows (**Shift + click** selects a range) → „Ausgewählte blockieren“ (block selected). Mark real accounts with „Echt“.
 
-Start small – block 5–10 accounts first and check the log. Defaults: 20–40 s random delay, max. 100 blocks/day, automatic 24 h pause when Meta rate-limits. Adjust under „Einstellungen“ (settings).
+Start small – block 5–10 accounts first and check the log. Defaults: 20–40 s random delay, max. 150 blocks/day, scans the newest 1000 followers first, checks max. 300 profiles per run, automatic 24 h pause when Meta rate-limits. Adjust under „Einstellungen“ (settings).
 
 ## Privacy
 
