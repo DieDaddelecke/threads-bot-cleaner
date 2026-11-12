@@ -1,0 +1,56 @@
+name: Fehler melden / Bug report
+description: Etwas funktioniert nicht wie erwartet / Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke fürs Melden! Bitte **keine** Tokens, Cookies oder privaten Daten einfügen – die Diagnose-Info aus dem Panel ist bereits bereinigt.
+        Thanks for reporting! Please do **not** paste tokens, cookies or private data – the panel's diagnostics are already sanitized.
+  - type: input
+    id: version
+    attributes:
+      label: Script-Version
+      description: Steht oben im Panel, z. B. v0.8.0 / Shown at the top of the panel
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser & Erweiterung / Browser & extension
+      options:
+        - Chrome + Tampermonkey
+        - Edge + Tampermonkey
+        - Firefox + Tampermonkey
+        - Firefox + Violentmonkey
+        - Anderes / Other
+    validations:
+      required: true
+  - type: dropdown
+    id: step
+    attributes:
+      label: Wo hakt es? / Where does it fail?
+      options:
+        - Panel erscheint nicht / Panel doesn't show
+        - "Schritt 1: Follower-Abfrage wird nicht gelernt"
+        - Follower-Scan
+        - Profil-Prüfung
+        - "Schritt 2: Block-Aktion wird nicht gelernt"
+        - Blocken / Warteschlange
+        - Bewertung (falsch erkannt) / Scoring
+        - Anderes / Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Was ist passiert? / What happened?
+      description: Was hast du gemacht, was hast du erwartet, was kam stattdessen?
+    validations:
+      required: true
+  - type: textarea
+    id: diag
+    attributes:
+      label: Diagnose-Info
+      description: Panel → Diagnose → „Diagnose-Info kopieren“ und hier einfügen
+      render: json
