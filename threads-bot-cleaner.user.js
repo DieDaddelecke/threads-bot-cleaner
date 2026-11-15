@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @downloadURL  https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @license      MIT
-// @version      0.9.0
+// @version      0.10.0
 // @description  Bot-Follower auf Threads finden, prüfen und gedrosselt blockieren / Find, review and throttled-block bot followers on Threads.
 // @match        https://www.threads.com/*
 // @match        https://www.threads.net/*
@@ -34,7 +34,7 @@
   const W = window;
   if (W.__TBC__) return;
 
-  const VERSION = '0.9.0';
+  const VERSION = '0.10.0';
   const NS = 'tbc:';
   const PH = '__TBC_TARGET__';
   const API_RE = /\/(api\/)?graphql|\/api\/v1\//i;
@@ -592,6 +592,8 @@
     if (u.bio === '') {
       if (u.links === 0) { s += 10; r.push('Bio leer'); } else { s += 5; r.push('Bio leer'); }
     }
+    // Bei privaten Profilen ist unklar, ob Threads den Link nur ausblendet – dort zählt es nicht
+    if (u.ig === '' && !u.private) { s += 10; r.push('kein Instagram'); }
     if (SPAM_RE.test((u.name || '') + ' ' + (u.bio || '') + ' ' + name)) { s += 20; r.push('Spam'); }
     if (u.private) {
       s += 10; r.push('privat');
@@ -633,7 +635,13 @@
         });
       }
     }
-    return { user, posts, lastPost, hidden };
+    // Instagram-Symbol im Profilkopf: <a href="https://www.instagram.com/<name>/" … target="_blank">
+    let ig = null;
+    if (user) {
+      const m2 = html.match(/href="https:\/\/www\.instagram\.com\/([A-Za-z0-9._]{1,30})\/?"[^>]*target="_blank"/);
+      ig = m2 && !/^(threads|accounts|oauth|explore|about|legal|developer|p|reel)$/i.test(m2[1]) ? m2[1] : '';
+    }
+    return { user, posts, lastPost, hidden, ig };
   }
 
   async function fetchProfile(username) {
@@ -685,6 +693,7 @@
       if (r.posts !== null) u.posts = r.posts;
       u.postsHidden = !!r.hidden && r.posts === null;
       if (r.lastPost) u.lastPost = r.lastPost;
+      if (r.ig !== null && r.ig !== undefined) u.ig = r.ig; // '' = kein Instagram verknüpft
       u.checkedAt = Date.now();
       u.checkFail = 0;
       ok++;
@@ -1138,6 +1147,8 @@
   .av { width: 24px; height: 24px; object-fit: cover; background: var(--sunken); display: block; border: .5px solid var(--line); }
   .who a { color: var(--ink); text-decoration: none; font-family: var(--f-head); font-weight: 620; font-size: 13px; letter-spacing: -.01em; line-height: 1.25; }
   .who a:hover { color: var(--accent-ink); }
+  .who a.ig { font-family: var(--f-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .08em; color: var(--muted); border: .5px solid var(--line-strong); padding: 0 4px; margin-left: 4px; vertical-align: 2px; }
+  .who a.ig:hover { color: #fff; background: var(--ink); border-color: var(--ink); }
   .sub { color: var(--muted); font-size: 11px; line-height: 1.25; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .new { background: var(--accent); color: #fff; font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: 1px 5px; margin-left: 6px; vertical-align: 2px; }
   .sc { display: inline-block; min-width: 34px; text-align: center; padding: 1px 5px; font-family: var(--f-mono); font-size: 13px; font-weight: 700; }
@@ -1551,6 +1562,7 @@
           '<td class="cb">' + (canSel ? '<input type="checkbox" data-sel="' + esc(id) + '"' + (S.selected.has(id) ? ' checked' : '') + '>' : '') + '</td>' +
           '<td class="av-td">' + (u.pic ? '<img class="av" loading="lazy" src="' + esc(u.pic) + '">' : '<div class="av"></div>') + '</td>' +
           '<td class="who"><a href="/@' + encodeURIComponent(u.username) + '" target="_blank" rel="noopener">@' + esc(u.username) + '</a>' +
+          (u.ig ? ' <a class="ig" href="https://www.instagram.com/' + encodeURIComponent(u.ig) + '/" target="_blank" rel="noopener" title="Instagram-Profil öffnen">IG</a>' : '') +
           (prev && u.firstSeen > prev ? '<span class="new">neu</span>' : '') +
           (u.name ? '<div class="sub">' + esc(u.name) + '</div>' : '') +
           '<div class="nums-inline" data-why="' + esc(sc.r.slice(0, 3).join(' · ')) + '">' +

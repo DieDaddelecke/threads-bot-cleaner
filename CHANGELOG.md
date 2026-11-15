@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.0
+- Profil-Prüfung erkennt, ob ein Instagram-Konto verknüpft ist (ohne zusätzliche Abfrage). Öffentliche Profile ohne Instagram: +10.
+- IG-Link neben dem Namen, um Grenzfälle schnell auf Instagram anzusehen.
+
 ## 0.9.0
 - Tageslimit Standard 150 (höhere Werte werden einmalig auf 150 gesenkt).
 - Profil-Prüfung standardmäßig 2 parallel, max. 300 Profile pro Durchlauf.

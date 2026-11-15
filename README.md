@@ -49,6 +49,7 @@ Standard: **20–40 s** zufällige Pause pro Block, **max. 150 pro Tag**. Gescan
 | Zufallsname / kein Anzeigename | +12 / +8 |
 | Schema „Vorname.Nachname“ | +10 |
 | leere Bio ohne Links | +10 |
+| kein Instagram-Konto verknüpft (nur öffentliche Profile) | +10 |
 
 **Farben:** dunkelrot ≥ 80 · rot ≥ Schwelle (Standard 50) · gelb knapp darunter · grau unauffällig.
 Verifizierte Konten und Konten, denen du selbst folgst, bekommen immer 0.
