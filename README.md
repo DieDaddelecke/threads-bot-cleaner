@@ -6,6 +6,16 @@ Tampermonkey-Userscript, das Bot-Follower auf [Threads](https://www.threads.com)
 
 ![Panel](docs/screenshot.png)
 
+## Funktionen
+
+- **Follower scannen** – lädt deine Follower in Blöcken (zuerst die neuesten 1000)
+- **Profile prüfen** – Beiträge, Follower, Bio, Links, verknüpftes Instagram; daraus ein **Bot-Score 0–100** mit nachvollziehbaren Gründen
+- **Blocken per Klick oder Bulk** – Zeilen anklicken, **Shift + Klick** für ganze Bereiche
+- **Gedrosselte Warteschlange** – zufällige Pausen, Tageslimit, **Ruhezeiten** und **Kaffeepausen**, automatischer Stopp, wenn Meta bremst
+- **Einstellungen (⚙)** – Tempo-Voreinstellungen, Gewichtung pro Merkmal, eigene Spam- und Schutz-Wörter, Schutzregeln
+- **Autopilot & täglicher Check** – optional, eindeutige Bots automatisch einreihen
+- **Läuft lokal** – kein Server, keine Drittanbieter, keine gespeicherten Tokens
+
 > [!WARNING]
 > **Inoffizielles Tool, nicht mit Meta verbunden.** Es automatisiert Aktionen in deinem eigenen, eingeloggten Browser und verstößt damit streng genommen gegen Metas Nutzungsbedingungen. Zu viele Blocks in kurzer Zeit können zu vorübergehenden Aktionssperren führen. **Nutzung auf eigenes Risiko.**
 
@@ -42,7 +52,7 @@ Updates kommen automatisch über Tampermonkey (sofort: Dashboard → „Nach Upd
 | **Automatik** | Autopilot: Konten ab Score X (Standard 85) automatisch einreihen – standardmäßig aus; täglicher Check der neuesten Follower beim Öffnen von Threads |
 | **Erweitert** | Profil-Prüfung (parallel, Pause, Menge), Follower pro Scan |
 
-![Einstellungen](docs/settings.png)
+<p><img src="docs/settings-tempo.png" width="49%" alt="Einstellungen: Tempo"> <img src="docs/settings-bewertung.png" width="49%" alt="Einstellungen: Bewertung"></p>
 
 Wenn Meta bremst, pausiert das Script automatisch 24 h. Die Warteschlange läuft, solange ein Threads-Tab offen ist, und setzt nach dem Neuladen fort.
 
@@ -88,6 +98,8 @@ Verifizierte Konten und Konten, denen du selbst folgst, bekommen immer 0.
 # English
 
 A Tampermonkey userscript that finds bot followers on [Threads](https://www.threads.com), scores them and – after your review – blocks them at a throttled pace. Runs entirely locally in your browser. *(The interface is currently in German.)*
+
+**Features:** follower scan in batches · profile check (posts, followers, bio, links, linked Instagram) · bot score 0–100 with reasons · block by click or bulk (Shift + click) · throttled queue with daily limit, quiet hours and random coffee breaks · settings dialog (⚙) with speed presets, per-signal weights, spam/protect word lists and protection rules · optional autopilot and daily check · runs locally, no server.
 
 > [!WARNING]
 > **Unofficial tool, not affiliated with Meta.** It automates actions in your own logged-in browser, which strictly speaking violates Meta's terms. Blocking too many accounts too fast can trigger temporary action blocks. **Use at your own risk.**
