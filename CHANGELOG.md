@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0
+- Neuer Bereich „Einstellungen“ mit Reitern Tempo / Bewertung / Automatik / Erweitert.
+- Tempo: Voreinstellungen Vorsichtig / Normal / Zügig, Regler für Blocks pro Tag (75–250) mit Risiko-Ampel und Dauer-Anzeige, Pausen-Regler, aktive Uhrzeiten, Kaffeepausen.
+- Bewertung: Strenge, Punkte pro Merkmal, eigene Spam- und Schutz-Wörter, Schutzregeln (Instagram, privat, ab X Followern).
+- Automatik: Autopilot ab Score X, täglicher Check der neuesten Follower.
+
 ## 0.10.0
 - Profil-Prüfung erkennt, ob ein Instagram-Konto verknüpft ist (ohne zusätzliche Abfrage). Öffentliche Profile ohne Instagram: +10.
 - IG-Link neben dem Namen, um Grenzfälle schnell auf Instagram anzusehen.

@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @downloadURL  https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @license      MIT
-// @version      0.10.0
+// @version      0.11.0
 // @description  Bot-Follower auf Threads finden, prüfen und gedrosselt blockieren / Find, review and throttled-block bot followers on Threads.
 // @match        https://www.threads.com/*
 // @match        https://www.threads.net/*
@@ -34,7 +34,7 @@
   const W = window;
   if (W.__TBC__) return;
 
-  const VERSION = '0.10.0';
+  const VERSION = '0.11.0';
   const NS = 'tbc:';
   const PH = '__TBC_TARGET__';
   const API_RE = /\/(api\/)?graphql|\/api\/v1\//i;
@@ -42,7 +42,33 @@
   const META_PARAM_RE = /^(doc_id|__.*|fb_.*|jazoest|lsd|server_timestamps|variables|av|dpr)$/;
   const DEFAULT_PIC_RE = /44884218_345707102882519_2446069589734326272_n|anonymous_profile|default_profile/i;
   const SPAM_RE = /(crypto|bitcoin|\bbtc\b|forex|trading|investor|onlyfans|giveaway|airdrop|\bnft\b|sugar ?(daddy|mommy|baby)|dm me|whatsapp|telegram|cash ?app|💰|📈|🔞)/i;
-  const DEFAULTS = { threshold: 50, minDelay: 20, maxDelay: 40, dailyLimit: 150, autoResume: true, autoCheck: true, checkParallel: 2, checkDelay: 1, skipClear: true, scanBatch: 1000, checkLimit: 300 };
+  // Gewichte der Merkmale (Punkte) – vom Nutzer anpassbar
+  const WEIGHTS = {
+    noPic: [30, 'kein Profilbild'], noPosts: [25, 'keine Beiträge'], followers0: [20, '0 Follower'], followersFew: [12, 'unter 5 Follower'],
+    digitsEnd: [20, 'Ziffern am Namensende'], digitsMany: [12, 'viele Ziffern im Namen'], digitsStart: [10, 'Ziffern am Namensanfang'],
+    randomName: [12, 'Zufallsname'], noName: [8, 'kein Anzeigename'], nameSchema: [10, 'Schema Vorname.Nachname'],
+    followsMany: [15, 'folgt vielen, kaum Follower'], bioEmpty: [10, 'leere Bio ohne Links'], noIg: [10, 'kein Instagram (öffentlich)'],
+    spam: [20, 'Spam-Begriffe'], private: [10, 'privat'], privateEmpty: [15, 'privat & leer'],
+  };
+  const DEFAULT_W = Object.fromEntries(Object.entries(WEIGHTS).map(([k, v]) => [k, v[0]]));
+  const PRESETS = {
+    vorsichtig: { label: 'Vorsichtig', dailyLimit: 100, minDelay: 30, maxDelay: 60, checkParallel: 1 },
+    normal: { label: 'Normal', dailyLimit: 150, minDelay: 20, maxDelay: 40, checkParallel: 2 },
+    zuegig: { label: 'Zügig', dailyLimit: 250, minDelay: 8, maxDelay: 16, checkParallel: 3 },
+  };
+  const STRICT = {
+    nachsichtig: { label: 'Nachsichtig', threshold: 60, scale: 0.85 },
+    ausgewogen: { label: 'Ausgewogen', threshold: 50, scale: 1 },
+    streng: { label: 'Streng', threshold: 40, scale: 1.15 },
+  };
+  const DEFAULTS = {
+    threshold: 50, minDelay: 20, maxDelay: 40, dailyLimit: 150, autoResume: true, autoCheck: true, checkParallel: 2, checkDelay: 1,
+    skipClear: true, scanBatch: 1000, checkLimit: 300,
+    strict: 'ausgewogen', weights: Object.assign({}, DEFAULT_W), spamWords: '', protectWords: '',
+    protectIg: false, protectPrivate: false, protectFollowersOn: false, protectFollowers: 100,
+    activeOn: true, activeFrom: 8, activeTo: 23, breaksOn: true,
+    autopilot: false, autopilotScore: 85, dailyCheck: false, dailyBatch: 200,
+  };
 
   /* ---------------------------------------------------------------- storage */
 
@@ -56,7 +82,7 @@
   };
 
   const S = {
-    settings: Object.assign({}, DEFAULTS, store.get('settings', {})),
+    settings: (() => { const st = Object.assign({}, DEFAULTS, store.get('settings', {})); st.weights = Object.assign({}, DEFAULT_W, st.weights || {}); return st; })(),
     followerTpl: store.get('followerTpl', null),
     blockTpl: store.get('blockTpl', null),
     users: store.get('users', {}),
@@ -79,6 +105,11 @@
     scanning: false,
     stopScan: false,
     scanInfo: '',
+    setTab: 'tempo',
+    inBreak: false,
+    sinceBreak: 0,
+    nextBreakAfter: 0,
+    hoursOverrideDay: '',
     checking: false,
     stopCheck: false,
     checkInfo: '',
@@ -569,41 +600,57 @@
     return [true, false].some((e) => translit(parts.join(''), e).replace(/[^a-z]/g, '') === translit(un, e).replace(/[^a-z]/g, ''));
   }
 
+  function wordList(str) {
+    return String(str || '').split(/[,\n;]+/).map((x) => x.trim().toLowerCase()).filter((x) => x.length >= 2);
+  }
+
   function score(u) {
+    const st = S.settings;
     if (u.verified) return { s: 0, r: ['verifiziert'] };
     if (u.iFollow) return { s: 0, r: ['du folgst zurück'] };
+    const text = ((u.username || '') + ' ' + (u.name || '') + ' ' + (u.bio || '')).toLowerCase();
+    const prot = wordList(st.protectWords).find((w) => text.includes(w));
+    if (prot) return { s: 0, r: ['Schutz-Wort „' + prot + '“'] };
+    if (st.protectPrivate && u.private) return { s: 0, r: ['privat (geschützt)'] };
+    if (st.protectFollowersOn && u.followers != null && u.followers >= st.protectFollowers) return { s: 0, r: ['ab ' + st.protectFollowers + ' Follower geschützt'] };
+
+    const scale = (STRICT[st.strict] || STRICT.ausgewogen).scale;
+    const w = (k) => Math.round((st.weights[k] != null ? st.weights[k] : DEFAULT_W[k]) * scale);
     const r = [];
     let s = 0;
+    const add = (k, label, f) => { const v = Math.round(w(k) * (f || 1)); if (v > 0) { s += v; r.push(label); } };
     const name = u.username || '';
     const digits = (name.match(/\d/g) || []).length;
-    if (u.anonPic) { s += 30; r.push('kein Bild'); }
-    if (/\d{4,}$/.test(name)) { s += 20; r.push('Ziffern hinten'); }
-    else if (digits >= 4) { s += 12; r.push(digits + ' Ziffern'); }
-    if (/^\d{3,}/.test(name)) { s += 10; r.push('Ziffern vorne'); }
-    if (looksRandom(name)) { s += 12; r.push('Zufallsname'); }
-    if (!u.name) { s += 8; r.push('kein Name'); }
-    else if (nameSchema(u)) { s += 10; r.push('Vorname.Nachname'); }
-    if (u.posts === 0) { s += 25; r.push('keine Posts'); }
+    if (u.anonPic) add('noPic', 'kein Bild');
+    if (/\d{4,}$/.test(name)) add('digitsEnd', 'Ziffern hinten');
+    else if (digits >= 4) add('digitsMany', digits + ' Ziffern');
+    if (/^\d{3,}/.test(name)) add('digitsStart', 'Ziffern vorne');
+    if (looksRandom(name)) add('randomName', 'Zufallsname');
+    if (!u.name) add('noName', 'kein Name');
+    else if (nameSchema(u)) add('nameSchema', 'Vorname.Nachname');
+    if (u.posts === 0) add('noPosts', 'keine Posts');
     if (u.followers != null) {
-      if (u.followers === 0) { s += 20; r.push('0 Follower'); }
-      else if (u.followers < 5) { s += 12; r.push('<5 Follower'); }
-      if (u.following != null && u.following > 300 && u.followers * 20 < u.following) { s += 15; r.push('folgt vielen'); }
+      if (u.followers === 0) add('followers0', '0 Follower');
+      else if (u.followers < 5) add('followersFew', '<5 Follower');
+      if (u.following != null && u.following > 300 && u.followers * 20 < u.following) add('followsMany', 'folgt vielen');
     }
-    if (u.bio === '') {
-      if (u.links === 0) { s += 10; r.push('Bio leer'); } else { s += 5; r.push('Bio leer'); }
-    }
+    if (u.bio === '') add('bioEmpty', 'Bio leer', u.links === 0 ? 1 : 0.5);
     // Bei privaten Profilen ist unklar, ob Threads den Link nur ausblendet – dort zählt es nicht
-    if (u.ig === '' && !u.private) { s += 10; r.push('kein Instagram'); }
-    if (SPAM_RE.test((u.name || '') + ' ' + (u.bio || '') + ' ' + name)) { s += 20; r.push('Spam'); }
+    if (u.ig === '' && !u.private) add('noIg', 'kein Instagram');
+    const custom = wordList(st.spamWords);
+    if (SPAM_RE.test(text) || custom.some((x) => text.includes(x))) add('spam', 'Spam');
     if (u.private) {
-      s += 10; r.push('privat');
+      add('private', 'privat');
       const empty = u.posts === 0 || u.posts == null; // bei privaten Konten sind Beiträge meist nicht sichtbar
-      if (empty && u.followers != null && u.followers < 5) { s += 15; r.push('privat & leer'); }
-      else if (u.posts === 0) { s += 10; r.push('privat, 0 Posts'); }
+      if (empty && u.followers != null && u.followers < 5) add('privateEmpty', 'privat & leer');
+      else if (u.posts === 0) add('privateEmpty', 'privat, 0 Posts', 0.67);
     } else if (u.postsHidden) { r.push('Posts unsichtbar'); }
     if (!u.checkedAt) r.push('ungeprüft');
-    return { s: Math.min(100, s), r };
+    s = Math.min(100, s);
+    if (st.protectIg && u.ig && s >= st.threshold) { s = Math.max(0, st.threshold - 1); r.unshift('IG → manuell prüfen'); }
+    return { s, r };
   }
+
 
   /* ---------------------------------------------- profile check (enrich) */
 
@@ -727,6 +774,7 @@
 
     S.checking = false; S.checkInfo = '';
     persist('users');
+    if (!onlyIds) setTimeout(autopilotEnqueue, 1000);
     if (total > 1 || errs) {
       log('Profil-Prüfung: ' + ok + ' geprüft' + (skipped ? ', ' + skipped + ' eindeutige übersprungen' : '') +
         (errs ? ', ' + errs + ' nicht abrufbar' : '') + ' · ' + countSuspicious() + ' verdächtig.' +
@@ -768,7 +816,7 @@
 
   /* -------------------------------------------------------------- scan */
 
-  async function scan(cont) {
+  async function scan(cont, batchOverride) {
     if (S.scanning) return;
     if (!S.followerTpl) { log('Erst Lernschritt 1: Follower-Liste deines Profils öffnen und etwas scrollen.', 'warn'); return; }
     S.scanning = true; S.stopScan = false; S.scanInfo = 'Scan startet …';
@@ -776,7 +824,7 @@
     const seen = new Set();
     const scanStart = Date.now();
     let cursor = cont && S.scanCursor ? S.scanCursor : null; let pages = 0; let complete = false; let added = 0; let batchFull = false;
-    const batch = Math.max(100, S.settings.scanBatch || 1000);
+    const batch = Math.max(50, batchOverride || S.settings.scanBatch || 1000);
     try {
       while (!S.stopScan) {
         const res = await replay(buildFollowerReq(S.followerTpl, cursor));
@@ -833,6 +881,7 @@
       log('Scan gestoppt nach ' + seen.size + ' Followern.', 'warn');
     }
     S.scanning = false; S.scanInfo = '';
+    if (!S.settings.autoCheck) setTimeout(autopilotEnqueue, 1000);
     UI.dirty('bar', 'table', 'setup');
   }
 
@@ -981,6 +1030,35 @@
     UI.dirty('queue');
   }
 
+  // Aktive Uhrzeiten (z. B. 8–23 Uhr); über Mitternacht (22–6) funktioniert auch
+  function inActiveHours(d) {
+    const st = S.settings;
+    if (!st.activeOn || st.activeFrom === st.activeTo || S.hoursOverrideDay === today()) return true;
+    const h = (d || new Date()).getHours();
+    return st.activeFrom < st.activeTo ? (h >= st.activeFrom && h < st.activeTo) : (h >= st.activeFrom || h < st.activeTo);
+  }
+  function nextActiveStart() {
+    const d = new Date(); d.setMinutes(Math.round(rand(2, 25)), 0, 0); d.setHours(S.settings.activeFrom);
+    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  function newBreakTarget() { S.nextBreakAfter = Math.round(rand(20, 40)); S.sinceBreak = 0; }
+
+  function autopilotEnqueue() {
+    const st = S.settings;
+    if (!st.autopilot || !S.blockTpl) return 0;
+    const qset = new Set(S.queue);
+    const ids = Object.keys(S.users).filter((id) => {
+      const u = S.users[id];
+      return !u.gone && !isDone(id) && !qset.has(id) && score(u).s >= Math.max(st.autopilotScore, st.threshold);
+    });
+    if (!ids.length) return 0;
+    const n = enqueue(ids);
+    log('Autopilot: ' + n + ' Konten ab Score ' + st.autopilotScore + ' in die Warteschlange gelegt.', 'ok');
+    startQueue();
+    return n;
+  }
+
   function scheduleResume(extraMs) {
     clearTimeout(S.resumeTimer);
     if (!S.queueActive || !S.queue.length) return;
@@ -1001,9 +1079,14 @@
     let errStreak = 0; let tokenWaits = 0; let keepActive = true;
     while (S.running && S.queue.length) {
       if (Date.now() < S.pausedUntil) { log('Pausiert bis ' + fmtTime(S.pausedUntil) + ' – geht dann automatisch weiter.', 'warn'); break; }
+      if (!inActiveHours()) {
+        S.pausedUntil = nextActiveStart(); S.pauseReason = 'Ruhezeit'; persist('pausedUntil');
+        log('Ruhezeit (' + S.settings.activeFrom + '–' + S.settings.activeTo + ' Uhr aktiv) – weiter ab ' + fmtTime(S.pausedUntil) + '.');
+        break;
+      }
       rollDay();
       if (S.stats.count >= S.settings.dailyLimit) {
-        S.pausedUntil = nextMidnight(); persist('pausedUntil');
+        S.pausedUntil = nextMidnight(); S.pauseReason = 'Tageslimit'; persist('pausedUntil');
         log('Tageslimit (' + S.settings.dailyLimit + ') erreicht – weiter ab ' + fmtTime(S.pausedUntil) + '.', 'warn');
         break;
       }
@@ -1025,7 +1108,7 @@
         await sleep(5000);
         continue;
       } else if (c === 'ratelimit') {
-        S.pausedUntil = Date.now() + 24 * 3600e3; persist('pausedUntil');
+        S.pausedUntil = Date.now() + 24 * 3600e3; S.pauseReason = 'Meta bremst'; persist('pausedUntil');
         log('Meta bremst (HTTP ' + res.status + ') – automatische Pause bis ' + fmtTime(S.pausedUntil) + '.', 'err');
         break;
       } else if (c === 'auth') {
@@ -1045,6 +1128,19 @@
         }
       }
       UI.dirty('queue', 'table');
+      if (c === 'ok') {
+        if (!S.nextBreakAfter) newBreakTarget();
+        S.sinceBreak++;
+        if (S.settings.breaksOn && S.sinceBreak >= S.nextBreakAfter && S.queue.length && S.running) {
+          const mins = rand(5, 15);
+          log('Kaffeepause nach ' + S.sinceBreak + ' Blocks: ' + Math.round(mins) + ' Min.');
+          S.inBreak = true;
+          await waitMs(mins * 60e3);
+          S.inBreak = false;
+          newBreakTarget();
+          continue;
+        }
+      }
       if (S.queue.length && S.running) await waitMs(rand(S.settings.minDelay, S.settings.maxDelay) * 1000);
     }
     const wasRunning = S.running;
@@ -1178,6 +1274,32 @@
   .l-ok { color: var(--ink); } .l-warn { color: #8a5a00; } .l-err { color: var(--danger); font-weight: 600; }
   .cap { margin-top: 8px; font: 12px var(--f-mono); display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow: auto; }
   .cap code { color: var(--muted); font-family: var(--f-mono); }
+  .settings-box { display: block; border: .5px solid var(--line-strong); background: var(--raised); }
+  .tabs { display: flex; border-bottom: .5px solid var(--line-strong); }
+  .tabs button { border: 0; border-right: .5px solid var(--line); background: transparent; padding: 11px 16px; }
+  .tabs button.on { background: var(--ink); color: var(--bg); }
+  .setpane { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .setrow { display: grid; grid-template-columns: 190px 1fr auto; gap: 14px; align-items: center; }
+  .setrow > .k { font-weight: 600; } .setrow > .k small { display: block; font-weight: 400; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .setrow input[type=range] { width: 100%; }
+  .setrow .v { font-family: var(--f-mono); font-size: 12px; min-width: 120px; text-align: right; }
+  .seg { display: inline-flex; } .seg button + button { border-left: 0; }
+  .seg button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .amp { display: inline-block; font-family: var(--f-mono); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: 2px 7px; margin-left: 8px; }
+  .amp.g { background: #1f7a3f; color: #fff; } .amp.y { background: #f2b33d; color: var(--ink); } .amp.r { background: var(--danger); color: #fff; }
+  .note { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .note b { color: var(--ink); }
+  .wgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 6px 22px; }
+  .wrow { display: grid; grid-template-columns: 1fr 110px 34px; gap: 10px; align-items: center; font-size: 12.5px; }
+  .wrow .v { font-family: var(--f-mono); text-align: right; }
+  .wrow.off span:first-child { color: var(--faint); text-decoration: line-through; }
+  textarea { width: 100%; min-height: 58px; background: #fff; color: var(--ink); border: .5px solid var(--line-strong); padding: 8px 10px; font: 12.5px var(--f-mono); resize: vertical; outline: none; }
+  textarea:focus { border-color: var(--accent); }
+  .sub-h { font: 700 10.5px var(--f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); border-top: .5px solid var(--line); padding-top: 14px; }
+  .sub-h:first-child { border-top: 0; padding-top: 0; }
+  .inline { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+  .hours input[type=number] { width: 64px; }
+  @container pnl (max-width: 640px) { .setrow { grid-template-columns: 1fr; gap: 6px; } .setrow .v { text-align: left; } }
   .warnbox { border: .5px solid var(--danger); color: var(--danger); padding: 5px 10px; }
   /* Anpassung an die Panel-Breite (nicht ans Fenster) */
   .body { container-type: inline-size; container-name: pnl; }
@@ -1239,22 +1361,13 @@
       <div class="more"></div>
       <div class="lbl"><em>04</em> / Warteschlange</div>
       <section class="queue"></section>
-      <details class="settings"><summary>Einstellungen</summary>
-        <div class="grid">
-          <label>Pause min (s) <input type="number" min="5" data-set="minDelay"></label>
-          <label>Pause max (s) <input type="number" min="5" data-set="maxDelay"></label>
-          <label>Tageslimit <input type="number" min="1" data-set="dailyLimit"></label>
-          <label><input type="checkbox" data-set="autoResume"> nach Neuladen fortsetzen</label>
-          <label><input type="checkbox" data-set="autoCheck"> nach Scan Profile prüfen</label>
-          <label>Profile parallel <input type="number" min="1" max="6" data-set="checkParallel"></label>
-          <label>Pause Profil (s) <input type="number" min="0.2" step="0.1" data-set="checkDelay"></label>
-          <label><input type="checkbox" data-set="skipClear"> eindeutige Bots (≥ 80) nicht prüfen</label>
-          <label>Follower pro Scan <input type="number" min="100" step="100" data-set="scanBatch"></label>
-          <label>Profile pro Prüfung <input type="number" min="10" step="10" data-set="checkLimit"></label>
-        </div>
-        <p class="muted">Tipp: Zeile anklicken = auswählen, Shift + Klick = alles dazwischen.</p>
-        <p class="muted">Die Warteschlange läuft nur, solange ein Threads-Tab offen ist. Konservative Werte senken das Risiko von Aktionssperren.</p>
-      </details>
+      <div class="lbl"><em>05</em> / Einstellungen</div>
+      <section class="settings-box">
+        <nav class="tabs">
+          <button data-tab="tempo">Tempo</button><button data-tab="score">Bewertung</button><button data-tab="auto">Automatik</button><button data-tab="adv">Erweitert</button>
+        </nav>
+        <div class="setpane"></div>
+      </section>
       <details class="logbox" open><summary>Protokoll</summary><pre class="log"></pre></details>
       <details class="debug"><summary>Diagnose</summary>
         <p class="muted">Zuletzt mitgelesene Anfragen. Falls etwas nicht automatisch erkannt wurde, kannst du es hier manuell zuordnen.</p>
@@ -1313,10 +1426,21 @@
             return;
           }
         }
-        const b = e.target.closest('[data-act],[data-block],[data-wl],[data-unwl],[data-unq],[data-capf],[data-capb],[data-chk]');
+        const b = e.target.closest('[data-act],[data-block],[data-wl],[data-unwl],[data-unq],[data-capf],[data-capb],[data-chk],[data-tab],[data-preset],[data-strict]');
         if (!b) return;
         const d = b.dataset;
         if (d.block) { enqueue([d.block], true); startQueue(); return; }
+        if (d.tab) { S.setTab = d.tab; this.dirty('settings'); return; }
+        if (d.preset) {
+          const pr = PRESETS[d.preset];
+          Object.assign(S.settings, { dailyLimit: pr.dailyLimit, minDelay: pr.minDelay, maxDelay: pr.maxDelay, checkParallel: pr.checkParallel });
+          persist('settings'); log('Voreinstellung „' + pr.label + '“ gesetzt.'); this.dirty('settings', 'queue'); return;
+        }
+        if (d.strict) {
+          const sp = STRICT[d.strict];
+          S.settings.strict = d.strict; S.settings.threshold = sp.threshold;
+          persist('settings'); this.syncInputs(); this.dirty('settings', 'table'); return;
+        }
         if (d.chk) { if (S.checking) log('Profil-Prüfung läuft bereits.', 'warn'); else checkProfiles([d.chk]); return; }
         if (d.wl) { S.whitelist.add(d.wl); S.selected.delete(d.wl); persist('whitelist'); this.dirty('table'); return; }
         if (d.unwl) { S.whitelist.delete(d.unwl); persist('whitelist'); this.dirty('table'); return; }
@@ -1366,10 +1490,13 @@
           case 'qstart': startQueue(); break;
           case 'qpause': pauseQueue(); break;
           case 'qclear': S.queue = []; persist('queue'); this.dirty('queue', 'table'); break;
-          case 'unpause': S.pausedUntil = 0; persist('pausedUntil'); this.dirty('queue'); break;
+          case 'unpause':
+            if (S.pauseReason === 'Ruhezeit') S.hoursOverrideDay = today();
+            S.pausedUntil = 0; S.pauseReason = ''; persist('pausedUntil'); this.dirty('queue'); break;
           case 'resetf': S.followerTpl = null; S.warnedOtherProfile = false; persist('followerTpl'); log('Follower-Abfrage zurückgesetzt.'); this.dirty('setup', 'bar'); break;
           case 'resetb': S.blockTpl = null; persist('blockTpl'); log('Block-Aktion zurückgesetzt.'); this.dirty('setup', 'queue'); break;
           case 'copydebug': copyDebug(); break;
+          case 'resetw': S.settings.weights = Object.assign({}, DEFAULT_W); persist('settings'); this.dirty('settings', 'table'); break;
           case 'resetall':
             if (W.confirm('Alle gespeicherten Daten des Bot-Cleaners löschen (Follower, Whitelist, Warteschlange, gelernte Anfragen)?')) {
               Object.keys(localStorage).filter((k) => k.startsWith(NS)).forEach((k) => localStorage.removeItem(k));
@@ -1389,11 +1516,25 @@
           this.dirty('table');
         } else if (d.set) {
           const k = d.set;
-          S.settings[k] = t.type === 'checkbox' ? t.checked : Math.max(Number(t.min) || 0, Number(t.value) || DEFAULTS[k]);
+          if (t.type === 'checkbox') S.settings[k] = t.checked;
+          else {
+            let v = Number(t.value);
+            if (!Number.isFinite(v) || t.value === '') v = DEFAULTS[k];
+            if (t.min !== '') v = Math.max(Number(t.min), v);
+            if (t.max !== '') v = Math.min(Number(t.max), v);
+            S.settings[k] = v;
+          }
           if (S.settings.maxDelay < S.settings.minDelay) S.settings.maxDelay = S.settings.minDelay;
           persist('settings');
           this.syncInputs();
+          this.dirty('table', 'queue', 'settings');
+        } else if (d.text) {
+          S.settings[d.text] = t.value;
+          persist('settings');
           this.dirty('table', 'queue');
+        } else if (d.w || 'delay' in d) {
+          persist('settings');
+          this.dirty('settings', 'table', 'queue');
         } else if (d.filter && t.type === 'checkbox') {
           S.filter[d.filter] = t.checked;
           this.dirty('table');
@@ -1402,6 +1543,24 @@
 
       this.root.addEventListener('input', (e) => {
         const t = e.target; const d = t.dataset;
+        if (t.type === 'range' && d.set && d.set !== 'threshold') {
+          S.settings[d.set] = Number(t.value);
+          this.updateOutputs();
+          return;
+        }
+        if ('delay' in d) {
+          const avg = Number(t.value);
+          S.settings.minDelay = Math.max(5, Math.round(avg * 0.67)); S.settings.maxDelay = Math.round(avg * 1.33);
+          this.updateOutputs();
+          return;
+        }
+        if (d.w) {
+          S.settings.weights[d.w] = Number(t.value);
+          const o = this.q('[data-wout="' + d.w + '"]'); if (o) o.textContent = t.value;
+          t.closest('.wrow').classList.toggle('off', !Number(t.value));
+          this.dirty('table');
+          return;
+        }
         if (d.set === 'threshold') {
           S.settings.threshold = Number(t.value);
           this.q('.thv').textContent = t.value;
@@ -1477,6 +1636,8 @@
       if (all || parts.has('table')) this.renderTable();
       if (all || parts.has('log')) this.renderLog();
       if (all || parts.has('debug')) this.renderDebug();
+      if (all || parts.has('settings')) this.renderSettings();
+      else if (parts.has('table') || parts.has('queue')) this.updateOutputs();
     },
 
     renderSetup() {
@@ -1513,6 +1674,73 @@
         '<span class="muted">' + esc(S.checkInfo || S.scanInfo || (ls ? 'Letzter Scan: ' + fmtTime(ls.ts) + ' · ' + ls.count + ' Follower' + (S.scanCursor ? ' (weitere vorhanden)' : '') : 'Noch kein Scan')) + '</span>';
     },
 
+    renderSettings() {
+      const st = S.settings; const tab = S.setTab;
+      this.root.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+      const pane = this.q('.setpane');
+      const chk = (k, label) => '<label><input type="checkbox" data-set="' + k + '"' + (st[k] ? ' checked' : '') + '> ' + label + '</label>';
+      const num = (k, min, max, step) => '<input type="number" data-set="' + k + '" min="' + min + '" max="' + max + '" step="' + (step || 1) + '" value="' + st[k] + '">';
+      let h = '';
+      if (tab === 'tempo') {
+        const pre = Object.keys(PRESETS).find((k) => { const p = PRESETS[k]; return p.dailyLimit === st.dailyLimit && p.minDelay === st.minDelay && p.maxDelay === st.maxDelay && p.checkParallel === st.checkParallel; });
+        h += '<div class="sub-h">Voreinstellung</div><div class="inline"><span class="seg">' +
+          Object.keys(PRESETS).map((k) => '<button data-preset="' + k + '" class="' + (pre === k ? 'on' : '') + '">' + PRESETS[k].label + '</button>').join('') +
+          '</span><span class="note">' + (pre ? (pre === 'normal' ? 'Bewährter Standard.' : '') : 'Eigene Einstellung.') + ' Vorsichtig: 100/Tag · ~45 s · Normal: 150/Tag · ~30 s · Zügig: 250/Tag · ~12 s</span></div>';
+        h += '<div class="sub-h">Blocken</div>';
+        h += '<div class="setrow"><div class="k">Blocks pro Tag</div><input type="range" min="75" max="250" step="25" data-set="dailyLimit" value="' + st.dailyLimit + '"><div class="v" data-out="dailyLimit"></div></div>';
+        h += '<div class="setrow"><div class="k">Pause zwischen Blocks<small>zufällig ±33 %</small></div><input type="range" min="8" max="60" step="1" data-delay value="' + Math.round((st.minDelay + st.maxDelay) / 2) + '"><div class="v" data-out="delay"></div></div>';
+        h += '<div class="note" data-out="eta"></div>';
+        h += '<div class="sub-h">Menschlicher wirken</div>';
+        h += '<div class="inline hours">' + chk('activeOn', 'Nur blocken zwischen') + num('activeFrom', 0, 23) + '<span>und</span>' + num('activeTo', 0, 24) + '<span>Uhr</span></div>';
+        h += '<div class="inline">' + chk('breaksOn', 'Kaffeepausen') + '<span class="note">nach 20–40 Blocks eine zufällige Pause von 5–15 Minuten</span></div>';
+      } else if (tab === 'score') {
+        h += '<div class="sub-h">Strenge</div><div class="inline"><span class="seg">' +
+          Object.keys(STRICT).map((k) => '<button data-strict="' + k + '" class="' + (st.strict === k ? 'on' : '') + '">' + STRICT[k].label + '</button>').join('') +
+          '</span><span class="note">setzt Schwelle (60 / 50 / 40) und skaliert alle Punkte (×0,85 / ×1 / ×1,15)</span></div>';
+        h += '<div class="sub-h">Punkte pro Merkmal <button class="link" data-act="resetw">zurücksetzen</button></div><div class="wgrid">' +
+          Object.keys(WEIGHTS).map((k) => '<div class="wrow' + (st.weights[k] ? '' : ' off') + '"><span>' + WEIGHTS[k][1] + '</span><input type="range" min="0" max="40" step="1" data-w="' + k + '" value="' + st.weights[k] + '"><span class="v" data-wout="' + k + '">' + st.weights[k] + '</span></div>').join('') + '</div>';
+        h += '<div class="sub-h">Wortlisten</div>';
+        h += '<div class="setrow"><div class="k">Eigene Spam-Wörter<small>kommagetrennt, zählen wie „Spam“</small></div><textarea data-text="spamWords" placeholder="z. B. krypto, gewinnspiel, investment">' + esc(st.spamWords) + '</textarea><div></div></div>';
+        h += '<div class="setrow"><div class="k">Schutz-Wörter<small>Name/Bio enthält eins → nie markiert</small></div><textarea data-text="protectWords" placeholder="z. B. Leipzig, Architektur, FC St. Pauli">' + esc(st.protectWords) + '</textarea><div></div></div>';
+        h += '<div class="sub-h">Schutzregeln</div><div class="inline">' + chk('protectIg', 'Konten mit Instagram nie automatisch (nur manuell prüfen)') + '</div>' +
+          '<div class="inline">' + chk('protectPrivate', 'Private Konten ausnehmen') + '</div>' +
+          '<div class="inline">' + chk('protectFollowersOn', 'Konten ausnehmen ab') + num('protectFollowers', 1, 100000) + '<span>Followern</span></div>';
+      } else if (tab === 'auto') {
+        h += '<div class="sub-h">Autopilot</div><div class="inline">' + chk('autopilot', 'Eindeutige Bots automatisch in die Warteschlange') + '</div>';
+        h += '<div class="setrow"><div class="k">ab Score</div><input type="range" min="60" max="100" step="5" data-set="autopilotScore" value="' + st.autopilotScore + '"><div class="v" data-out="autopilotScore"></div></div>';
+        h += '<div class="note">Läuft nach jedem Scan bzw. jeder Profil-Prüfung. Alles darunter bleibt bei dir. Nutzt die Block-Aktion aus Lernschritt 2.</div>';
+        h += '<div class="sub-h">Täglicher Check</div><div class="inline">' + chk('dailyCheck', 'Beim Öffnen von Threads (max. 1× pro Tag) die neuesten') + num('dailyBatch', 50, 1000, 50) + '<span>Follower scannen</span></div>';
+        h += '<div class="sub-h">Sonstiges</div><div class="inline">' + chk('autoCheck', 'Nach dem Scan Profile prüfen') + chk('autoResume', 'Warteschlange nach Neuladen fortsetzen') + '</div>';
+      } else {
+        h += '<div class="sub-h">Profil-Prüfung</div>';
+        h += '<div class="setrow"><div class="k">Parallele Abrufe</div><input type="range" min="1" max="4" step="1" data-set="checkParallel" value="' + st.checkParallel + '"><div class="v" data-out="checkParallel"></div></div>';
+        h += '<div class="setrow"><div class="k">Pause pro Abruf</div><input type="range" min="0.5" max="5" step="0.5" data-set="checkDelay" value="' + st.checkDelay + '"><div class="v" data-out="checkDelay"></div></div>';
+        h += '<div class="inline"><label>Profile pro Prüfung ' + num('checkLimit', 10, 2000, 10) + '</label><label>Follower pro Scan ' + num('scanBatch', 100, 10000, 100) + '</label>' + chk('skipClear', 'eindeutige Bots (≥ 80) nicht prüfen') + '</div>';
+        h += '<div class="note">Tipp: Zeile anklicken = auswählen, Shift + Klick = alles dazwischen. Die Warteschlange läuft nur, solange ein Threads-Tab offen ist.</div>';
+      }
+      pane.innerHTML = h;
+      this.updateOutputs();
+    },
+
+    updateOutputs() {
+      const st = S.settings;
+      const set = (k, v) => { const el = this.q('[data-out="' + k + '"]'); if (el) el.innerHTML = v; };
+      const amp = st.dailyLimit <= 125 ? '<span class="amp g">geringes Risiko</span>' : st.dailyLimit <= 175 ? '<span class="amp y">mittel</span>' : '<span class="amp r">erhöht</span>';
+      set('dailyLimit', st.dailyLimit + amp);
+      set('delay', '≈ ' + Math.round((st.minDelay + st.maxDelay) / 2) + ' s <span class="muted">(' + st.minDelay + '–' + st.maxDelay + ' s)</span>');
+      set('autopilotScore', st.autopilotScore);
+      set('checkParallel', st.checkParallel + '×');
+      set('checkDelay', '≈ ' + st.checkDelay + ' s');
+      const todo = new Set(S.queue);
+      for (const id of Object.keys(S.users)) { const u = S.users[id]; if (!u.gone && !isDone(id) && score(u).s >= st.threshold) todo.add(id); }
+      const n = todo.size;
+      const perDay = st.dailyLimit;
+      const mins = Math.round(perDay * (st.minDelay + st.maxDelay) / 2 / 60 * (st.breaksOn ? 1.3 : 1));
+      set('eta', n
+        ? '<b>' + n + ' verdächtige Konten</b> → bei ' + perDay + ' pro Tag in ca. <b>' + Math.max(1, Math.ceil(n / perDay)) + ' Tag' + (Math.ceil(n / perDay) > 1 ? 'en' : '') + '</b> erledigt. Ein voller Tag dauert ca. ' + (mins >= 60 ? Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min' : mins + ' min') + ' Laufzeit.'
+        : 'Noch keine verdächtigen Konten – erst scannen. Ein voller Tag (' + perDay + ' Blocks) dauert ca. ' + mins + ' min Laufzeit.');
+    },
+
     renderQueue() {
       rollDay();
       const st = S.settings;
@@ -1525,8 +1753,10 @@
         else eta = 'ca. ' + (1 + Math.ceil(Math.max(0, S.queue.length - left) / st.dailyLimit)) + ' Tage (Tageslimit)';
       }
       let state;
-      if (S.running) state = S.nextAt ? 'läuft – nächster Block in ' + Math.max(0, Math.ceil((S.nextAt - Date.now()) / 1000)) + ' s' : 'läuft …';
-      else if (paused) state = 'pausiert bis ' + fmtTime(S.pausedUntil) + ' <button class="link" data-act="unpause">Pause aufheben</button>';
+      const secs = Math.max(0, Math.ceil((S.nextAt - Date.now()) / 1000));
+      if (S.running && S.inBreak) state = '☕ Kaffeepause – weiter in ' + Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') + ' min';
+      else if (S.running) state = S.nextAt ? 'läuft – nächster Block in ' + secs + ' s' : 'läuft …';
+      else if (paused) state = (S.pauseReason ? S.pauseReason + ' – ' : '') + 'pausiert bis ' + fmtTime(S.pausedUntil) + ' <button class="link" data-act="unpause">' + (S.pauseReason === 'Ruhezeit' ? 'heute trotzdem weiter' : 'Pause aufheben') + '</button>';
       else state = S.queue.length ? 'gestoppt' : 'leer';
       this.q('.queue').innerHTML =
         '<div><b>Warteschlange:</b> ' + S.queue.length + ' · heute ' + S.stats.count + '/' + st.dailyLimit +
@@ -1639,6 +1869,14 @@
       log('Setze Warteschlange fort (' + S.queue.length + ' offen) …');
       scheduleResume(15000);
     }
+    // Täglicher Check: höchstens alle 20 h die neuesten Follower scannen
+    setTimeout(() => {
+      const st = S.settings;
+      if (!st.dailyCheck || !S.followerTpl || S.scanning) return;
+      if (S.lastScan && Date.now() - S.lastScan.ts < 20 * 3600e3) return;
+      log('Täglicher Check: lade die neuesten ' + st.dailyBatch + ' Follower …');
+      scan(false, st.dailyBatch);
+    }, 20000);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

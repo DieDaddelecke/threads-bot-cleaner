@@ -31,9 +31,20 @@ Updates kommen automatisch über Tampermonkey (sofort: Dashboard → „Nach Upd
 > [!TIP]
 > **Beim ersten Mal klein anfangen:** erst 5–10 Konten blockieren und im Protokoll prüfen, ob alles klappt. Werte im gelben Bereich (knapp unter der Schwelle) vor dem Blocken kurz ansehen.
 
-### Tempo & Limits
+### Einstellungen
 
-Standard: **20–40 s** zufällige Pause pro Block, **max. 150 pro Tag**. Gescannt werden zunächst die **neuesten 1000 Follower** (weitere per „Nächste 1000 laden“), geprüft werden **max. 300 Profile pro Durchlauf**, 2 parallel. Sobald Meta bremst, pausiert das Script automatisch 24 h. Alles lässt sich unter „Einstellungen“ anpassen – erhöhe die Werte erst, wenn ein paar Tage ohne Sperre gelaufen sind. Die Warteschlange läuft, solange ein Threads-Tab offen ist, und setzt nach dem Neuladen fort.
+Im Panel unter **05 / Einstellungen**, aufgeteilt in vier Reiter:
+
+| Reiter | Was du einstellst |
+|---|---|
+| **Tempo** | Voreinstellung *Vorsichtig* (100/Tag, ~45 s) · *Normal* (150/Tag, ~30 s, Standard) · *Zügig* (250/Tag, ~12 s); Regler für Blocks pro Tag (75–250) mit Risiko-Ampel und Dauer-Anzeige; Pause zwischen Blocks (8–60 s, zufällig ±33 %); aktive Uhrzeiten (Standard 8–23 Uhr); Kaffeepausen (nach 20–40 Blocks 5–15 Min.) |
+| **Bewertung** | Strenge *Nachsichtig / Ausgewogen / Streng*; Punkte pro Merkmal (0 = ignorieren); eigene Spam-Wörter; Schutz-Wörter (Name/Bio enthält eins → nie markiert); Schutzregeln für Konten mit Instagram, private Konten oder ab X Followern |
+| **Automatik** | Autopilot: Konten ab Score X (Standard 85) automatisch einreihen – standardmäßig aus; täglicher Check der neuesten Follower beim Öffnen von Threads |
+| **Erweitert** | Profil-Prüfung (parallel, Pause, Menge), Follower pro Scan |
+
+![Einstellungen](docs/settings.png)
+
+Wenn Meta bremst, pausiert das Script automatisch 24 h. Die Warteschlange läuft, solange ein Threads-Tab offen ist, und setzt nach dem Neuladen fort.
 
 ## Bot-Score (0–100)
 
@@ -94,7 +105,7 @@ A Tampermonkey userscript that finds bot followers on [Threads](https://www.thre
 3. **Learn the block action:** block one **obvious** bot manually, the normal way.
 4. **Clean up:** click rows (**Shift + click** selects a range) → „Ausgewählte blockieren“ (block selected). Mark real accounts with „Echt“.
 
-Start small – block 5–10 accounts first and check the log. Defaults: 20–40 s random delay, max. 150 blocks/day, scans the newest 1000 followers first, checks max. 300 profiles per run, automatic 24 h pause when Meta rate-limits. Adjust under „Einstellungen“ (settings).
+Start small – block 5–10 accounts first and check the log. Defaults: 20–40 s random delay, max. 150 blocks/day, active 8–23 h with random coffee breaks, scans the newest 1000 followers first, automatic 24 h pause when Meta rate-limits. Everything – speed presets, per-signal weights, protect/spam word lists, autopilot – is adjustable under „Einstellungen“ (settings).
 
 ## Privacy
 
