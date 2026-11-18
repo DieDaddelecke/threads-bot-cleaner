@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.12.0
+- Einstellungen in einem eigenen Dialog (⚙ oben im Panel), Hauptansicht wieder aufgeräumt.
+
 ## 0.11.0
 - Neuer Bereich „Einstellungen“ mit Reitern Tempo / Bewertung / Automatik / Erweitert.
 - Tempo: Voreinstellungen Vorsichtig / Normal / Zügig, Regler für Blocks pro Tag (75–250) mit Risiko-Ampel und Dauer-Anzeige, Pausen-Regler, aktive Uhrzeiten, Kaffeepausen.

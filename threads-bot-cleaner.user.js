@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @downloadURL  https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @license      MIT
-// @version      0.11.0
+// @version      0.12.0
 // @description  Bot-Follower auf Threads finden, prüfen und gedrosselt blockieren / Find, review and throttled-block bot followers on Threads.
 // @match        https://www.threads.com/*
 // @match        https://www.threads.net/*
@@ -34,7 +34,7 @@
   const W = window;
   if (W.__TBC__) return;
 
-  const VERSION = '0.11.0';
+  const VERSION = '0.12.0';
   const NS = 'tbc:';
   const PH = '__TBC_TARGET__';
   const API_RE = /\/(api\/)?graphql|\/api\/v1\//i;
@@ -1186,6 +1186,19 @@
     font-family: var(--f-head); font-weight: 800; font-size: 22px; }
   header b { display: flex; align-items: center; padding: 0 18px; font-family: var(--f-head); font-weight: 620; font-size: 22px; letter-spacing: -.03em; border-right: .5px solid var(--line); }
   header .ver { display: flex; align-items: center; padding: 0 16px; color: var(--muted); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; }
+  header .gear { margin-left: auto; border: 0; border-left: .5px solid var(--line); width: 54px; font-size: 18px; background: transparent; }
+  header .gear:hover, header .gear.on { background: var(--ink); color: var(--bg); }
+  header .gear + .x { margin-left: 0; }
+  .modal { position: absolute; left: 0; right: 0; top: 54px; bottom: 0; z-index: 10; background: rgba(242,241,238,.72); backdrop-filter: blur(2px);
+    display: flex; justify-content: center; align-items: flex-start; padding: 18px; overflow: auto; }
+  .modal[hidden] { display: none; }
+  .dlg { width: 100%; max-width: 980px; background: var(--raised); border: .5px solid var(--ink); box-shadow: 10px 10px 0 rgba(16,16,20,.10); container-type: inline-size; container-name: pnl; }
+  .dlg-h { display: flex; align-items: center; gap: 14px; padding: 0 0 0 18px; border-bottom: .5px solid var(--line-strong); min-height: 50px; }
+  .dlg-h b { font-family: var(--f-head); font-weight: 620; font-size: 20px; letter-spacing: -.02em; }
+  .dlg-h .muted { font-size: 12px; }
+  .dlg-h .x { margin-left: auto; border: 0; border-left: .5px solid var(--line); width: 50px; align-self: stretch; background: transparent; font-size: 15px; }
+  .dlg-h .x:hover { background: var(--ink); color: var(--bg); }
+  .dlg .settings-box { border: 0; }
   header .x { margin-left: auto; border: 0; border-left: .5px solid var(--line); width: 54px; font-size: 16px; background: transparent; }
   header .x:hover { background: var(--ink); color: var(--bg); }
 
@@ -1335,7 +1348,7 @@
   <button class="fab" data-act="toggle">Bots<span class="badge" hidden></span></button>
   <div class="panel" hidden>
     <div class="grip" title="Ziehen = Breite ändern · Doppelklick = Standardbreite"></div>
-    <header><span class="mark">@</span><b>Threads Bot-Cleaner</b><span class="ver">v${VERSION}</span><button class="x" data-act="toggle">✕</button></header>
+    <header><span class="mark">@</span><b>Threads Bot-Cleaner</b><span class="ver">v${VERSION}</span><button class="gear" data-act="settings" title="Einstellungen">⚙</button><button class="x" data-act="toggle">✕</button></header>
     <div class="body">
       <div class="lbl"><em>01</em> / Einrichtung</div>
       <section class="setup"></section>
@@ -1361,19 +1374,23 @@
       <div class="more"></div>
       <div class="lbl"><em>04</em> / Warteschlange</div>
       <section class="queue"></section>
-      <div class="lbl"><em>05</em> / Einstellungen</div>
-      <section class="settings-box">
-        <nav class="tabs">
-          <button data-tab="tempo">Tempo</button><button data-tab="score">Bewertung</button><button data-tab="auto">Automatik</button><button data-tab="adv">Erweitert</button>
-        </nav>
-        <div class="setpane"></div>
-      </section>
       <details class="logbox" open><summary>Protokoll</summary><pre class="log"></pre></details>
       <details class="debug"><summary>Diagnose</summary>
         <p class="muted">Zuletzt mitgelesene Anfragen. Falls etwas nicht automatisch erkannt wurde, kannst du es hier manuell zuordnen.</p>
         <div class="cap"></div>
         <p><button data-act="copydebug">Diagnose-Info kopieren</button> <button class="danger" data-act="resetall">Alles zurücksetzen</button></p>
       </details>
+    </div>
+    <div class="modal" hidden>
+      <div class="dlg">
+        <div class="dlg-h"><b>Einstellungen</b><span class="muted">Änderungen werden sofort gespeichert</span><button class="x" data-act="settings-close" title="Schließen">✕</button></div>
+        <section class="settings-box">
+          <nav class="tabs">
+            <button data-tab="tempo">Tempo</button><button data-tab="score">Bewertung</button><button data-tab="auto">Automatik</button><button data-tab="adv">Erweitert</button>
+          </nav>
+          <div class="setpane"></div>
+        </section>
+      </div>
     </div>
   </div>`;
 
@@ -1496,6 +1513,8 @@
           case 'resetf': S.followerTpl = null; S.warnedOtherProfile = false; persist('followerTpl'); log('Follower-Abfrage zurückgesetzt.'); this.dirty('setup', 'bar'); break;
           case 'resetb': S.blockTpl = null; persist('blockTpl'); log('Block-Aktion zurückgesetzt.'); this.dirty('setup', 'queue'); break;
           case 'copydebug': copyDebug(); break;
+          case 'settings': this.toggleSettings(); break;
+          case 'settings-close': this.toggleSettings(false); break;
           case 'resetw': S.settings.weights = Object.assign({}, DEFAULT_W); persist('settings'); this.dirty('settings', 'table'); break;
           case 'resetall':
             if (W.confirm('Alle gespeicherten Daten des Bot-Cleaners löschen (Follower, Whitelist, Warteschlange, gelernte Anfragen)?')) {
@@ -1506,6 +1525,9 @@
           default: break;
         }
       });
+
+      this.root.addEventListener('mousedown', (e) => { if (e.target.classList && e.target.classList.contains('modal')) this.toggleSettings(false); });
+      W.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.root && !this.q('.modal').hidden) this.toggleSettings(false); });
 
       this.root.addEventListener('change', (e) => {
         const t = e.target; const d = t.dataset;
@@ -1674,7 +1696,16 @@
         '<span class="muted">' + esc(S.checkInfo || S.scanInfo || (ls ? 'Letzter Scan: ' + fmtTime(ls.ts) + ' · ' + ls.count + ' Follower' + (S.scanCursor ? ' (weitere vorhanden)' : '') : 'Noch kein Scan')) + '</span>';
     },
 
+    toggleSettings(force) {
+      const m = this.q('.modal');
+      const open = force === undefined ? m.hidden : force;
+      m.hidden = !open;
+      this.q('.gear').classList.toggle('on', open);
+      if (open) this.renderSettings();
+    },
+
     renderSettings() {
+      if (this.q('.modal').hidden) return;
       const st = S.settings; const tab = S.setTab;
       this.root.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
       const pane = this.q('.setpane');
@@ -1724,6 +1755,7 @@
 
     updateOutputs() {
       const st = S.settings;
+      if (this.q('.modal').hidden) return;
       const set = (k, v) => { const el = this.q('[data-out="' + k + '"]'); if (el) el.innerHTML = v; };
       const amp = st.dailyLimit <= 125 ? '<span class="amp g">geringes Risiko</span>' : st.dailyLimit <= 175 ? '<span class="amp y">mittel</span>' : '<span class="amp r">erhöht</span>';
       set('dailyLimit', st.dailyLimit + amp);

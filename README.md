@@ -33,7 +33,7 @@ Updates kommen automatisch über Tampermonkey (sofort: Dashboard → „Nach Upd
 
 ### Einstellungen
 
-Im Panel unter **05 / Einstellungen**, aufgeteilt in vier Reiter:
+Über das **⚙-Symbol** oben im Panel, aufgeteilt in vier Reiter:
 
 | Reiter | Was du einstellst |
 |---|---|
