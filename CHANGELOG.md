@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.1
+- Fix (#1): Zahlenfelder akzeptieren Tausenderpunkte („5.000“). Ungültige Eingaben fielen bisher still auf den Standardwert 1.000 zurück – jetzt bleibt der alte Wert und es gibt einen Hinweis im Protokoll.
+- Neben „Follower scannen“ steht, wie viele Follower pro Lauf geladen werden.
+
 ## 0.12.0
 - Einstellungen in einem eigenen Dialog (⚙ oben im Panel), Hauptansicht wieder aufgeräumt.
 

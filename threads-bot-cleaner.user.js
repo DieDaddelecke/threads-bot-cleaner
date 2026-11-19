@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @downloadURL  https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @license      MIT
-// @version      0.12.0
+// @version      0.12.1
 // @description  Bot-Follower auf Threads finden, prüfen und gedrosselt blockieren / Find, review and throttled-block bot followers on Threads.
 // @match        https://www.threads.com/*
 // @match        https://www.threads.net/*
@@ -34,7 +34,7 @@
   const W = window;
   if (W.__TBC__) return;
 
-  const VERSION = '0.12.0';
+  const VERSION = '0.12.1';
   const NS = 'tbc:';
   const PH = '__TBC_TARGET__';
   const API_RE = /\/(api\/)?graphql|\/api\/v1\//i;
@@ -1311,7 +1311,9 @@
   .sub-h { font: 700 10.5px var(--f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); border-top: .5px solid var(--line); padding-top: 14px; }
   .sub-h:first-child { border-top: 0; padding-top: 0; }
   .inline { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
-  .hours input[type=number] { width: 64px; }
+  .hours input[type=number], .hours input.int { width: 64px; }
+  input.int { background: var(--raised); color: var(--ink); border: .5px solid var(--line-strong); padding: 8px 10px; font: 12.5px var(--f-mono); width: 96px; outline: none; }
+  input.int:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   @container pnl (max-width: 640px) { .setrow { grid-template-columns: 1fr; gap: 6px; } .setrow .v { text-align: left; } }
   .warnbox { border: .5px solid var(--danger); color: var(--danger); padding: 5px 10px; }
   /* Anpassung an die Panel-Breite (nicht ans Fenster) */
@@ -1540,8 +1542,12 @@
           const k = d.set;
           if (t.type === 'checkbox') S.settings[k] = t.checked;
           else {
-            let v = Number(t.value);
-            if (!Number.isFinite(v) || t.value === '') v = DEFAULTS[k];
+            // Ganzzahlen: Tausenderpunkte/-kommas/Leerzeichen erlauben („5.000“ → 5000)
+            let v = 'int' in d ? parseInt(String(t.value).replace(/[^\d]/g, ''), 10) : Number(t.value);
+            if (!Number.isFinite(v) || t.value.trim() === '') {
+              v = S.settings[k];
+              log('„' + t.value + '“ ist keine gültige Zahl – Wert bleibt ' + v + '.', 'warn');
+            }
             if (t.min !== '') v = Math.max(Number(t.min), v);
             if (t.max !== '') v = Math.min(Number(t.max), v);
             S.settings[k] = v;
@@ -1562,6 +1568,8 @@
           this.dirty('table');
         }
       });
+
+      this.root.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches && e.target.matches('input.int')) e.target.blur(); });
 
       this.root.addEventListener('input', (e) => {
         const t = e.target; const d = t.dataset;
@@ -1693,7 +1701,7 @@
         (S.checking
           ? '<button data-act="stopcheck">Prüfung stoppen</button>'
           : '<button data-act="check" ' + (Object.keys(S.users).length && !S.scanning ? '' : 'disabled') + ' title="Ruft die Profilseiten langsam ab: Follower, Posts, Bio, Links">Profile prüfen</button>') +
-        '<span class="muted">' + esc(S.checkInfo || S.scanInfo || (ls ? 'Letzter Scan: ' + fmtTime(ls.ts) + ' · ' + ls.count + ' Follower' + (S.scanCursor ? ' (weitere vorhanden)' : '') : 'Noch kein Scan')) + '</span>';
+        '<span class="muted">' + (S.scanning || S.checkInfo ? '' : 'bis ' + Number(S.settings.scanBatch).toLocaleString('de-DE') + ' pro Lauf · ') + esc(S.checkInfo || S.scanInfo || (ls ? 'Letzter Scan: ' + fmtTime(ls.ts) + ' · ' + ls.count + ' Follower' + (S.scanCursor ? ' (weitere vorhanden)' : '') : 'Noch kein Scan')) + '</span>';
     },
 
     toggleSettings(force) {
@@ -1710,7 +1718,7 @@
       this.root.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
       const pane = this.q('.setpane');
       const chk = (k, label) => '<label><input type="checkbox" data-set="' + k + '"' + (st[k] ? ' checked' : '') + '> ' + label + '</label>';
-      const num = (k, min, max, step) => '<input type="number" data-set="' + k + '" min="' + min + '" max="' + max + '" step="' + (step || 1) + '" value="' + st[k] + '">';
+      const num = (k, min, max) => '<input type="text" inputmode="numeric" class="int" data-set="' + k + '" data-int min="' + min + '" max="' + max + '" value="' + st[k] + '" title="' + min + '–' + max + '">';
       let h = '';
       if (tab === 'tempo') {
         const pre = Object.keys(PRESETS).find((k) => { const p = PRESETS[k]; return p.dailyLimit === st.dailyLimit && p.minDelay === st.minDelay && p.maxDelay === st.maxDelay && p.checkParallel === st.checkParallel; });
