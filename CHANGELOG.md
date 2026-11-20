@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.2
+- Fix (#1): Scan bricht bei einem kurzzeitigen Fehler nicht mehr ab, sondern versucht es bis zu 3× (5 / 15 / 45 s).
+- Bricht ein Scan doch ab, zeigt das Panel den echten Stand und den Grund an – statt der Anzeige des vorherigen Laufs – und „Weiter laden“ setzt genau dort fort.
+- Kein endloses Warten mehr, wenn Sitzungs-Tokens fehlen.
+- Diagnose-Info enthält jetzt Scan-Stand und eingestellte Blockgröße.
+
 ## 0.12.1
 - Fix (#1): Zahlenfelder akzeptieren Tausenderpunkte („5.000“). Ungültige Eingaben fielen bisher still auf den Standardwert 1.000 zurück – jetzt bleibt der alte Wert und es gibt einen Hinweis im Protokoll.
 - Neben „Follower scannen“ steht, wie viele Follower pro Lauf geladen werden.

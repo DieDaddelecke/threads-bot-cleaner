@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @downloadURL  https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @license      MIT
-// @version      0.12.1
+// @version      0.12.2
 // @description  Bot-Follower auf Threads finden, prüfen und gedrosselt blockieren / Find, review and throttled-block bot followers on Threads.
 // @match        https://www.threads.com/*
 // @match        https://www.threads.net/*
@@ -34,7 +34,7 @@
   const W = window;
   if (W.__TBC__) return;
 
-  const VERSION = '0.12.1';
+  const VERSION = '0.12.2';
   const NS = 'tbc:';
   const PH = '__TBC_TARGET__';
   const API_RE = /\/(api\/)?graphql|\/api\/v1\//i;
@@ -824,13 +824,33 @@
     const seen = new Set();
     const scanStart = Date.now();
     let cursor = cont && S.scanCursor ? S.scanCursor : null; let pages = 0; let complete = false; let added = 0; let batchFull = false;
+    let abortReason = ''; let retries = 0; let tokenWaits = 0;
     const batch = Math.max(50, batchOverride || S.settings.scanBatch || 1000);
+    const prevCount = cont && S.lastScan ? (S.lastScan.count || 0) : 0; // Fortsetzung: weiterzählen
     try {
       while (!S.stopScan) {
-        const res = await replay(buildFollowerReq(S.followerTpl, cursor));
+        let res;
+        try { res = await replay(buildFollowerReq(S.followerTpl, cursor)); } catch (e) { res = { ok: false, status: 0, text: String(e), json: null }; }
         const c = classify(res);
-        if (c === 'notoken') { S.scanInfo = 'Warte auf Sitzungs-Tokens …'; UI.dirty('bar'); await sleep(3000); continue; }
-        if (c !== 'ok') { log('Scan-Fehler: ' + c + ' (HTTP ' + res.status + ').', 'err'); break; }
+        if (c === 'notoken') {
+          if (++tokenWaits > 20) { abortReason = 'keine Sitzungs-Tokens – Seite neu laden'; break; }
+          S.scanInfo = 'Warte auf Sitzungs-Tokens …'; UI.dirty('bar'); await sleep(3000); continue;
+        }
+        if (c === 'ratelimit') { abortReason = 'Meta bremst (HTTP ' + res.status + ')'; break; }
+        if (c === 'auth') { abortReason = 'Sitzung ungültig (HTTP ' + res.status + ') – Seite neu laden'; break; }
+        if (c !== 'ok') {
+          // Kurzzeitige Fehler: bis zu 3 Versuche mit wachsender Pause
+          if (++retries <= 3) {
+            const wait = [5, 15, 45][retries - 1];
+            log('Scan: Seite ' + (pages + 1) + ' fehlgeschlagen (' + c + ', HTTP ' + res.status + ') – neuer Versuch in ' + wait + ' s.', 'warn');
+            S.scanInfo = 'Seite ' + (pages + 1) + ': neuer Versuch in ' + wait + ' s …'; UI.dirty('bar');
+            await sleep(wait * 1000);
+            continue;
+          }
+          abortReason = c + ', HTTP ' + res.status;
+          break;
+        }
+        retries = 0; tokenWaits = 0;
         const pg = extractPage(res.json);
         const before = seen.size;
         added += mergeUsers(pg.users, seen);
@@ -839,21 +859,30 @@
         UI.dirty('bar');
         if (seen.size === before) {
           if (pages === 1) log('Die Antwort enthielt keine Follower – Lernschritt 1 wiederholen.', 'warn');
-          else log('Blättern liefert nur Bekanntes – Follower-Abfrage evtl. neu lernen (weiter scrollen).', 'warn');
+          else abortReason = 'Blättern liefert nur Bekanntes – Follower-Abfrage evtl. neu lernen';
           break;
         }
         if (!pg.hasNext || !pg.cursor) { complete = true; break; }
-        if (pg.cursor === cursor) { log('Blättern hängt (gleicher Cursor) – Scan beendet.', 'warn'); break; }
+        if (pg.cursor === cursor) { abortReason = 'Blättern hängt (gleicher Cursor)'; break; }
         cursor = pg.cursor;
         if (seen.size >= batch) { batchFull = true; break; }
         await sleep(rand(1500, 3500));
       }
     } catch (e) {
-      log('Scan-Fehler: ' + e.message, 'err');
+      abortReason = e.message;
+    }
+    // Abbruch: Stand und Fortsetzungspunkt sichtbar speichern statt alte Anzeige stehen zu lassen
+    if (!complete && !batchFull && !S.stopScan && (abortReason || seen.size)) {
+      if (cursor) { S.scanCursor = cursor; persist('scanCursor'); }
+      S.lastScan = { ts: scanStart, count: prevCount + seen.size, partial: true, error: abortReason || 'unbekannt' };
+      persist('lastScan', 'users');
+      log('Scan abgebrochen nach ' + seen.size + ' Followern (Seite ' + (pages + 1) + '): ' + (abortReason || 'unbekannt') +
+        (cursor ? '. Mit „Weiter laden“ an dieser Stelle fortsetzen.' : '.'), 'err');
+      if (seen.size && S.settings.autoCheck) setTimeout(() => checkProfiles(), 1500);
     }
     if (batchFull) {
       S.scanCursor = cursor; persist('scanCursor', 'users');
-      S.lastScan = { ts: scanStart, count: seen.size, partial: true }; persist('lastScan');
+      S.lastScan = { ts: scanStart, count: prevCount + seen.size, partial: true }; persist('lastScan');
       log('Scan: ' + seen.size + ' Follower geladen (Block à ' + batch + '), ' + added + ' neu, ' + countSuspicious() + ' verdächtig. Weitere mit „Nächste ' + batch + ' laden“.', 'ok');
       if (S.settings.autoCheck) setTimeout(() => checkProfiles(), 1500);
     }
@@ -875,9 +904,12 @@
       log('Scan fertig: ' + seen.size + ' Follower, ' + added + ' neu, ' + countSuspicious() + ' verdächtig.', 'ok');
       if (S.settings.autoCheck) setTimeout(() => checkProfiles(), 1500);
     } else if (complete && cont) {
+      S.lastScan = { ts: scanStart, count: prevCount + seen.size }; persist('lastScan');
       log('Scan: Ende der Follower-Liste erreicht (' + seen.size + ' in diesem Block, ' + added + ' neu).', 'ok');
       if (S.settings.autoCheck) setTimeout(() => checkProfiles(), 1500);
     } else if (S.stopScan) {
+      if (cursor && !complete) { S.scanCursor = cursor; persist('scanCursor'); }
+      S.lastScan = { ts: scanStart, count: prevCount + seen.size, partial: true, error: 'von dir gestoppt' }; persist('lastScan');
       log('Scan gestoppt nach ' + seen.size + ' Followern.', 'warn');
     }
     S.scanning = false; S.scanInfo = '';
@@ -1697,11 +1729,12 @@
       this.q('.bar').innerHTML =
         '<button class="primary" data-act="scan" ' + (S.followerTpl && !S.scanning ? '' : 'disabled') + '>Follower scannen</button>' +
         (S.scanning ? '<button data-act="stopscan">Scan stoppen</button>' : '') +
-        (!S.scanning && S.scanCursor && S.followerTpl ? '<button data-act="scanmore">Nächste ' + (S.settings.scanBatch || 1000) + ' laden</button>' : '') +
+        (!S.scanning && S.scanCursor && S.followerTpl ? '<button data-act="scanmore">' + (ls && ls.error ? 'Weiter laden' : 'Nächste ' + Number(S.settings.scanBatch || 1000).toLocaleString('de-DE') + ' laden') + '</button>' : '') +
         (S.checking
           ? '<button data-act="stopcheck">Prüfung stoppen</button>'
           : '<button data-act="check" ' + (Object.keys(S.users).length && !S.scanning ? '' : 'disabled') + ' title="Ruft die Profilseiten langsam ab: Follower, Posts, Bio, Links">Profile prüfen</button>') +
-        '<span class="muted">' + (S.scanning || S.checkInfo ? '' : 'bis ' + Number(S.settings.scanBatch).toLocaleString('de-DE') + ' pro Lauf · ') + esc(S.checkInfo || S.scanInfo || (ls ? 'Letzter Scan: ' + fmtTime(ls.ts) + ' · ' + ls.count + ' Follower' + (S.scanCursor ? ' (weitere vorhanden)' : '') : 'Noch kein Scan')) + '</span>';
+        '<span class="muted">' + (S.scanning || S.checkInfo ? '' : 'bis ' + Number(S.settings.scanBatch).toLocaleString('de-DE') + ' pro Lauf · ') + esc(S.checkInfo || S.scanInfo || (ls ? 'Letzter Scan: ' + fmtTime(ls.ts) + ' · ' + ls.count + ' Follower' + (ls.error ? '' : (S.scanCursor ? ' (weitere vorhanden)' : '')) : 'Noch kein Scan')) +
+        (ls && ls.error && !S.scanning ? ' <span class="l-err">· abgebrochen: ' + esc(ls.error) + '</span>' : '') + ('') + '</span>';
     },
 
     toggleSettings(force) {
@@ -1889,6 +1922,7 @@
       version: VERSION, ua: navigator.userAgent, path: location.pathname,
       tokens: { fb_dtsg: !!S.tokens.fb_dtsg, lsd: !!S.tokens.lsd, jazoest: !!S.tokens.jazoest },
       users: Object.keys(S.users).length, blocked: Object.keys(S.blocked).length, queue: S.queue.length,
+      lastScan: S.lastScan, scanBatch: S.settings.scanBatch, hasScanCursor: !!S.scanCursor,
       followerTpl: sanitizeTpl(S.followerTpl), blockTpl: sanitizeTpl(S.blockTpl),
       captured: S.captured.map((c) => ({ m: c.method, s: c.status, path: shortUrl(c.url), f: c.friendly })),
       log: S.log.slice(-30).map((l) => l.l + ': ' + l.m),
