@@ -29,14 +29,55 @@ Tampermonkey-Userscript, das Bot-Follower auf [Threads](https://www.threads.com)
 
 Updates kommen automatisch über Tampermonkey (sofort: Dashboard → „Nach Updates suchen“).
 
-## Erster Durchlauf
+## Erster Durchlauf – Schritt für Schritt
 
-| Schritt | Was du tust |
-|---|---|
-| **1. Follower-Abfrage lernen** | Auf deinem **eigenen** Profil auf „Follower“ tippen und in der Liste ein Stück nach unten scrollen. |
-| **2. Follower scannen** | „Follower scannen“ klicken. Danach werden die Profile automatisch geprüft (Follower, Beiträge, Bio, Links). |
-| **3. Block-Aktion lernen** | Einen **eindeutigen** Bot aus der Liste einmal ganz normal von Hand blockieren. |
-| **4. Aufräumen** | Zeilen anklicken (**Shift + Klick** = ganzer Bereich) → „Ausgewählte blockieren“. Echte Konten mit „Echt“ dauerhaft ausnehmen. |
+> [!IMPORTANT]
+> Alles passiert **am Computer im Browser auf threads.com** – dort, wo Tampermonkey läuft. Was du in der **Threads-App auf dem Handy** machst, sieht das Tool nicht.
+
+### 1. Follower-Abfrage lernen
+
+Klicke unten rechts auf **BOTS**. Oben im Panel stehen die zwei Lernschritte. Öffne jetzt **dein eigenes** Profil, tippe auf **„Follower“** und scrolle in der Liste ein Stück nach unten. Schritt 1 wird dann schwarz mit ✓.
+
+<img src="docs/anleitung/1-start.png" alt="Lernschritte vor dem Start" width="100%">
+
+### 2. Follower scannen
+
+Klicke auf **„Follower scannen“**. Das Tool lädt deine neuesten Follower (Standard: 1.000 pro Lauf) und prüft danach automatisch ihre Profile. Weitere lädst du mit **„Nächste … laden“**.
+
+<img src="docs/anleitung/2-scannen.png" alt="Follower scannen" width="100%">
+
+### 3. Block-Aktion lernen
+
+Jetzt muss das Tool **einmal sehen, wie du blockierst**. Klicke bei Schritt 2 auf **„Testkonto öffnen“** – das öffnet einen eindeutigen Bot aus deiner Liste direkt im Browser.
+
+<img src="docs/anleitung/3-testkonto.png" alt="Schritt 2 mit Button Testkonto öffnen" width="100%">
+
+Auf dem Profil erinnert dich ein Hinweis unten rechts, was zu tun ist: **oben rechts im Profil „…“ → Blockieren → bestätigen.** Danach meldet das Tool „✓ Block-Aktion gelernt“.
+
+<img src="docs/anleitung/4-blockieren.png" alt="Hinweis auf dem Testprofil" width="60%">
+
+<details>
+<summary><b>Schritt 2 bleibt offen?</b> So geht's trotzdem</summary>
+
+Wenn der Block erkannt, aber nicht gelernt wurde, steht der **Grund direkt bei Schritt 2** (rot). Darunter erscheint **„Block nicht erkannt? Anfrage auswählen“**: Dort siehst du die zuletzt mitgelesenen Aktionen. Wähle die mit **„Block“** im Namen (markiert als *wahrscheinlich*) und klicke **„Das war der Block“**.
+
+<img src="docs/anleitung/5-nicht-erkannt.png" alt="Grund und Auswahl der Anfrage" width="100%">
+
+Häufige Ursachen:
+- In der **Handy-App** statt im Browser geblockt → im Browser wiederholen.
+- Ein Konto geblockt, das **nicht in der gescannten Liste** steht → „Testkonto öffnen“ nutzen.
+- Hilft nichts: Panel → Diagnose → „Diagnose-Info kopieren“ und als [Issue](https://github.com/DieDaddelecke/threads-bot-cleaner/issues/new/choose) melden.
+</details>
+
+### 4. Aufräumen
+
+Beide Schritte haben jetzt ein ✓. Klicke Zeilen in der Liste an (**Shift + Klick** wählt einen ganzen Bereich) und dann **„Ausgewählte blockieren“** – oder einzelne Konten direkt mit **„Blocken“**. Echte Konten markierst du mit **„Echt“**, dann tauchen sie nie wieder auf.
+
+<img src="docs/anleitung/6-aufraeumen.png" alt="Panel mit Auswahl" width="100%">
+
+Die **Warteschlange** blockt dann gedrosselt im Hintergrund – mit Pausen, Tageslimit, Ruhezeiten und Kaffeepausen. Sie läuft, solange ein Threads-Tab offen ist.
+
+<img src="docs/anleitung/7-warteschlange.png" alt="Warteschlange" width="100%">
 
 > [!TIP]
 > **Beim ersten Mal klein anfangen:** erst 5–10 Konten blockieren und im Protokoll prüfen, ob alles klappt. Werte im gelben Bereich (knapp unter der Schwelle) vor dem Blocken kurz ansehen.
@@ -114,7 +155,7 @@ A Tampermonkey userscript that finds bot followers on [Threads](https://www.thre
 
 1. **Learn the follower query:** on **your own** profile open “Followers” and scroll down a bit.
 2. **Scan followers** („Follower scannen“). Profiles are then checked automatically.
-3. **Learn the block action:** block one **obvious** bot manually, the normal way.
+3. **Learn the block action:** click „Testkonto öffnen“ (open test account) at step 2 and block that bot via „…“ → Block – **in the browser, not in the Threads app**. If it isn't recognised, use „Block nicht erkannt? Anfrage auswählen“ right below step 2.
 4. **Clean up:** click rows (**Shift + click** selects a range) → „Ausgewählte blockieren“ (block selected). Mark real accounts with „Echt“.
 
 Start small – block 5–10 accounts first and check the log. Defaults: 20–40 s random delay, max. 150 blocks/day, active 8–23 h with random coffee breaks, scans the newest 1000 followers first, automatic 24 h pause when Meta rate-limits. Everything – speed presets, per-signal weights, protect/spam word lists, autopilot – is adjustable under „Einstellungen“ (settings).

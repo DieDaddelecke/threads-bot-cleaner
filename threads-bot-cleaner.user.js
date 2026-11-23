@@ -7,7 +7,7 @@
 // @updateURL    https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @downloadURL  https://raw.githubusercontent.com/DieDaddelecke/threads-bot-cleaner/main/threads-bot-cleaner.user.js
 // @license      MIT
-// @version      0.12.2
+// @version      0.13.0
 // @description  Bot-Follower auf Threads finden, prüfen und gedrosselt blockieren / Find, review and throttled-block bot followers on Threads.
 // @match        https://www.threads.com/*
 // @match        https://www.threads.net/*
@@ -34,7 +34,7 @@
   const W = window;
   if (W.__TBC__) return;
 
-  const VERSION = '0.12.2';
+  const VERSION = '0.13.0';
   const NS = 'tbc:';
   const PH = '__TBC_TARGET__';
   const API_RE = /\/(api\/)?graphql|\/api\/v1\//i;
@@ -95,6 +95,9 @@
     pausedUntil: store.get('pausedUntil', 0),
     lastScan: store.get('lastScan', null),
     scanCursor: store.get('scanCursor', null),
+    blockIssue: store.get('blockIssue', null),   // letzter Grund, warum ein Block nicht gelernt wurde
+    pendingTest: store.get('pendingTest', null), // { username, at } – Testkonto, das gerade blockiert werden soll
+    showPick: false,
     prevScanTs: store.get('prevScanTs', 0),
     log: store.get('log', []),
     tokens: {},
@@ -996,18 +999,23 @@
   function handleBlockRequest(req, fname, status, text, manual) {
     if (status < 200 || status >= 300) return false;
     const res = { ok: true, status, text, json: parseJSONLoose(text) };
+    const issue = (reason) => { S.blockIssue = { reason, at: Date.now() }; persist('blockIssue'); UI.dirty('setup'); };
     if (!manual && classify(res) !== 'ok') {
       log('Block-Anfrage erkannt, aber die Antwort war ein Fehler – nicht gelernt.', 'warn');
+      issue('Threads hat beim Blocken einen Fehler gemeldet. Bitte nochmal versuchen – oder einen anderen Bot nehmen.');
       return false;
     }
     const raw = makeTemplate(req, fname);
     const found = findTarget(raw, manual);
     if (!found) {
       log('Block-Aktion erkannt, aber das Zielkonto ist unklar. Erst „Follower scannen“, dann einen Bot aus der Liste per Hand blockieren.', 'warn');
+      issue(Object.keys(S.users).length
+        ? 'Block erkannt, aber das Konto steht nicht in deiner gescannten Follower-Liste. Nimm einen Bot aus der Liste (Button „Testkonto öffnen“).'
+        : 'Block erkannt, aber es wurde noch nicht gescannt. Erst „Follower scannen“, dann einen Bot aus der Liste blockieren.');
       return false;
     }
     const tpl = placeTarget(raw, found.value);
-    if (!(tpl.url + tpl.body).includes(PH)) { log('Block-Aktion: Ziel-ID nicht ersetzbar – nicht gelernt.', 'err'); return false; }
+    if (!(tpl.url + tpl.body).includes(PH)) { log('Block-Aktion: Ziel-ID nicht ersetzbar – nicht gelernt.', 'err'); issue('Block erkannt, aber nicht auswertbar. Bitte „Diagnose-Info kopieren“ und als Issue melden.'); return false; }
     tpl.idField = found.field;
     tpl.sample = found.username ? '@' + found.username : found.value;
     S.blockTpl = tpl;
@@ -1018,8 +1026,21 @@
       persist('blocked', 'queue');
     }
     log('Block-Aktion gelernt (' + (tpl.friendly || shortUrl(tpl.url)) + ') – Testkonto ' + tpl.sample + '.', 'ok');
+    S.blockIssue = null; S.pendingTest = null; S.showPick = false; persist('blockIssue', 'pendingTest');
+    UI.flashHint('✓ Block-Aktion gelernt! Öffne das Panel und blocke den Rest.');
     UI.dirty('setup', 'table', 'queue');
     return true;
+  }
+
+  function pickTestAccount() {
+    let best = null; let bestS = -1;
+    for (const id of Object.keys(S.users)) {
+      const u = S.users[id];
+      if (u.gone || isDone(id) || S.queue.includes(id)) continue;
+      const sc = score(u).s + (u.checkedAt ? 5 : 0);
+      if (sc > bestS) { best = u; bestS = sc; }
+    }
+    return best && score(best).s >= Math.min(80, S.settings.threshold + 20) ? best : (best && score(best).s >= S.settings.threshold ? best : null);
   }
 
   function fillTarget(tpl, u) {
@@ -1347,6 +1368,14 @@
   input.int { background: var(--raised); color: var(--ink); border: .5px solid var(--line-strong); padding: 8px 10px; font: 12.5px var(--f-mono); width: 96px; outline: none; }
   input.int:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   @container pnl (max-width: 640px) { .setrow { grid-template-columns: 1fr; gap: 6px; } .setrow .v { text-align: left; } }
+  .s2row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+  .s2issue { margin-top: 8px; padding: 7px 10px; border-left: 2px solid var(--danger); background: #b3261e0f; color: var(--danger); font-size: 12.5px; }
+  .pick { margin-top: 8px; padding: 10px; border: .5px solid var(--line-strong); background: var(--bg); display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+  .pick-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .pick-row code { font-family: var(--f-mono); font-size: 11.5px; }
+  .hint { position: fixed; right: 18px; bottom: 74px; z-index: 2147483646; max-width: 340px; background: var(--ink); color: var(--bg); padding: 12px 14px;
+    font: 13px/1.45 var(--f-body); box-shadow: 4px 4px 0 var(--accent); }
+  .hint[hidden] { display: none; }
+  .hint b { color: #fff; }
   .warnbox { border: .5px solid var(--danger); color: var(--danger); padding: 5px 10px; }
   /* Anpassung an die Panel-Breite (nicht ans Fenster) */
   .body { container-type: inline-size; container-name: pnl; }
@@ -1379,6 +1408,7 @@
   `;
 
   const SKELETON = `
+  <div class="hint" hidden></div>
   <button class="fab" data-act="toggle">Bots<span class="badge" hidden></span></button>
   <div class="panel" hidden>
     <div class="grip" title="Ziehen = Breite ändern · Doppelklick = Standardbreite"></div>
@@ -1449,7 +1479,15 @@
       this.bindResize();
       this.syncInputs();
       this.dirty('all');
-      setInterval(() => this.mount(), 3000);
+      setInterval(() => { this.mount(); this.updateHint(); }, 3000);
+      // Gelernt in einem anderen Tab? Übernehmen.
+      W.addEventListener('storage', (e) => {
+        if (e.key === NS + 'blockTpl' || e.key === NS + 'followerTpl') {
+          S.blockTpl = store.get('blockTpl', null); S.followerTpl = store.get('followerTpl', null);
+          S.blockIssue = store.get('blockIssue', null); S.pendingTest = store.get('pendingTest', null);
+          this.dirty('setup', 'queue', 'bar');
+        }
+      });
     },
 
     syncInputs() {
@@ -1547,6 +1585,14 @@
           case 'resetf': S.followerTpl = null; S.warnedOtherProfile = false; persist('followerTpl'); log('Follower-Abfrage zurückgesetzt.'); this.dirty('setup', 'bar'); break;
           case 'resetb': S.blockTpl = null; persist('blockTpl'); log('Block-Aktion zurückgesetzt.'); this.dirty('setup', 'queue'); break;
           case 'copydebug': copyDebug(); break;
+          case 'opentest': {
+            const un = b.dataset.user;
+            S.pendingTest = { username: un, at: Date.now() }; persist('pendingTest');
+            log('Testkonto @' + un + ' geöffnet – jetzt dort „…“ → Blockieren.');
+            location.assign('/@' + encodeURIComponent(un));
+            break;
+          }
+          case 'pick': S.showPick = !S.showPick; this.dirty('setup'); break;
           case 'settings': this.toggleSettings(); break;
           case 'settings-close': this.toggleSettings(false); break;
           case 'resetw': S.settings.weights = Object.assign({}, DEFAULT_W); persist('settings'); this.dirty('settings', 'table'); break;
@@ -1691,6 +1737,7 @@
         badge.hidden = !n;
         badge.textContent = S.queue.length ? '⏳ ' + S.queue.length : n;
       }
+      this.updateHint();
       if (!this.open) { parts.forEach((p) => this.parts.add(p)); return; }
       if (all || parts.has('setup')) this.renderSetup();
       if (all || parts.has('bar') || parts.has('setup')) this.renderBar();
@@ -1715,13 +1762,47 @@
           : 'Öffne <b>dein eigenes</b> Profil → tippe auf „Follower“ und scrolle in der Liste ein Stück nach unten.') +
         '</div></div>' +
         '<div class="step ' + (b ? 'ok' : '') + '"><span class="n">2</span><div><b>Block-Aktion:</b> ' +
-        (b
-          ? '✓ gelernt (Test: ' + esc(b.sample) + ') <button class="link" data-act="resetb">zurücksetzen</button>'
-          : nUsers
-            ? 'Öffne das Profil eines eindeutigen Bots aus der Liste unten → „…“ → <b>Blockieren</b> → bestätigen.'
-            : 'Nach Schritt 1 und dem ersten Scan: einen eindeutigen Bot einmal per Hand blockieren.') +
+        (b ? '✓ gelernt (Test: ' + esc(b.sample) + ') <button class="link" data-act="resetb">zurücksetzen</button>' : this.step2Html(nUsers)) +
         '</div></div>' +
         '<div class="tok">Sitzung: ' + (tok ? '✓ bereit' : '… warte auf Tokens (Seite kurz scrollen)') + '</div>';
+    },
+
+    step2Html(nUsers) {
+      if (!nUsers) return 'Nach Schritt 1 und dem ersten Scan: einen eindeutigen Bot einmal per Hand blockieren.';
+      const t = pickTestAccount();
+      const pt = S.pendingTest;
+      let h = 'Einmal einen Bot <b>hier im Browser auf threads.com</b> blockieren – <b>nicht in der Threads-App</b>, die sieht das Tool nicht.' +
+        '<div class="s2row">' +
+        (t ? '<button class="primary sm" data-act="opentest" data-user="' + esc(t.username) + '">Testkonto öffnen: @' + esc(t.username) + '</button>' : '') +
+        '<span class="muted">dann oben rechts im Profil <b>„…“ → Blockieren</b> → bestätigen</span></div>';
+      if (S.blockIssue) h += '<div class="s2issue">⚠ ' + esc(S.blockIssue.reason) + '</div>';
+      if (S.blockIssue || pt) {
+        h += '<div class="s2row"><button class="link" data-act="pick">' + (S.showPick ? 'Auswahl schließen' : 'Block nicht erkannt? Anfrage auswählen') + '</button></div>';
+        if (S.showPick) {
+          const cands = S.captured.filter((c) => c.method !== 'GET').sort((a, b) => (/block/i.test(b.friendly + b.url) ? 1 : 0) - (/block/i.test(a.friendly + a.url) ? 1 : 0)).slice(0, 8);
+          h += '<div class="pick">' + (cands.length
+            ? '<div class="muted">Zuletzt mitgelesene Aktionen – wähle die, die beim Blockieren entstanden ist (meist mit „Block“ im Namen):</div>' +
+              cands.map((c) => '<div class="pick-row"><code>' + esc(c.friendly || shortUrl(c.url)) + '</code>' + (/block/i.test(c.friendly + c.url) ? ' <span class="tag q">wahrscheinlich</span>' : '') +
+                ' <button class="sm" data-capb="' + S.captured.indexOf(c) + '">Das war der Block</button></div>').join('')
+            : '<div class="muted">In diesem Tab wurde noch keine Aktion mitgelesen. Blockiere den Bot in <b>diesem</b> Browser-Tab und öffne dann die Auswahl erneut.</div>') + '</div>';
+        }
+      }
+      return h;
+    },
+
+    flashHint(text) {
+      const h = this.q('.hint'); if (!h) return;
+      h.innerHTML = esc(text); h.hidden = false;
+      clearTimeout(this._hintT); this._hintT = setTimeout(() => { h.hidden = true; this.updateHint(); }, 9000);
+    },
+
+    updateHint() {
+      const h = this.q('.hint'); if (!h) return;
+      const pt = S.pendingTest;
+      if (pt && !S.blockTpl && currentProfile() === String(pt.username).toLowerCase() && Date.now() - pt.at < 3600e3) {
+        h.innerHTML = '<b>Lernschritt 2:</b> Blockiere jetzt <b>@' + esc(pt.username) + '</b> – oben rechts im Profil <b>„…“ → Blockieren</b> → bestätigen.';
+        h.hidden = false;
+      } else if (!this._hintT) h.hidden = true;
     },
 
     renderBar() {

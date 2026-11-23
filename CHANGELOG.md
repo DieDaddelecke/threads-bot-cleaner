@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.0
+- Lernschritt 2 klarer: Hinweis „im Browser, nicht in der App“ und Button „Testkonto öffnen“, der einen eindeutigen Bot aus der Liste direkt öffnet. Auf dessen Profil erklärt ein Hinweis, was zu tun ist.
+- Wird ein Block erkannt, aber nicht gelernt, steht der Grund direkt bei Schritt 2.
+- „Block nicht erkannt? Anfrage auswählen“ direkt bei Schritt 2 statt versteckt in der Diagnose.
+- Gelernt in einem anderen Tab? Wird automatisch übernommen.
+- README: bebilderte Schritt-für-Schritt-Anleitung.
+
 ## 0.12.2
 - Fix (#1): Scan bricht bei einem kurzzeitigen Fehler nicht mehr ab, sondern versucht es bis zu 3× (5 / 15 / 45 s).
 - Bricht ein Scan doch ab, zeigt das Panel den echten Stand und den Grund an – statt der Anzeige des vorherigen Laufs – und „Weiter laden“ setzt genau dort fort.
