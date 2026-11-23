@@ -40,6 +40,10 @@ Klicke unten rechts auf **BOTS**. Oben im Panel stehen die zwei Lernschritte. Ö
 
 <img src="docs/anleitung/1-start.png" alt="Lernschritte vor dem Start" width="100%">
 
+<img src="docs/anleitung/1b-follower-liste.png" alt="Eigene Follower-Liste auf threads.com" width="48%">
+
+<sub>Die Follower-Liste deines eigenen Profils auf threads.com – einfach ein Stück nach unten scrollen. (Alle Namen in den Bildern sind erfunden.)</sub>
+
 ### 2. Follower scannen
 
 Klicke auf **„Follower scannen“**. Das Tool lädt deine neuesten Follower (Standard: 1.000 pro Lauf) und prüft danach automatisch ihre Profile. Weitere lädst du mit **„Nächste … laden“**.
@@ -55,6 +59,19 @@ Jetzt muss das Tool **einmal sehen, wie du blockierst**. Klicke bei Schritt 2 au
 Auf dem Profil erinnert dich ein Hinweis unten rechts, was zu tun ist: **oben rechts im Profil „…“ → Blockieren → bestätigen.** Danach meldet das Tool „✓ Block-Aktion gelernt“.
 
 <img src="docs/anleitung/4-blockieren.png" alt="Hinweis auf dem Testprofil" width="60%">
+
+So sieht das auf Threads aus – Menü **„…“** oben rechts im Profil, dann **Blockieren** und bestätigen:
+
+<p>
+<img src="docs/anleitung/4b-menue-blockieren.png" alt="Menü … mit Blockieren" width="58%">
+<img src="docs/anleitung/4c-bestaetigen.png" alt="Blockieren bestätigen" width="38%">
+</p>
+
+<sub>Threads hier auf Französisch: „Bloquer“ = Blockieren. Namen, Profilbilder und Beitrag sind anonymisiert.</sub>
+
+Danach steht bei beiden Schritten ein ✓:
+
+<img src="docs/anleitung/4d-gelernt.png" alt="Beide Lernschritte erledigt" width="100%">
 
 <details>
 <summary><b>Schritt 2 bleibt offen?</b> So geht's trotzdem</summary>
