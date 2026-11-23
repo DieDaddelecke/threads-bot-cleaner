@@ -38,7 +38,7 @@ Updates kommen automatisch über Tampermonkey (sofort: Dashboard → „Nach Upd
 
 Klicke unten rechts auf **BOTS**. Oben im Panel stehen die zwei Lernschritte. Öffne jetzt **dein eigenes** Profil, tippe auf **„Follower“** und scrolle in der Liste ein Stück nach unten. Schritt 1 wird dann schwarz mit ✓.
 
-<img src="docs/anleitung/1-start.png" alt="Lernschritte vor dem Start" width="100%">
+<img src="docs/anleitung/1a-panel-start.png" alt="Panel beim ersten Öffnen: beide Lernschritte offen" width="100%">
 
 <img src="docs/anleitung/1b-follower-liste.png" alt="Eigene Follower-Liste auf threads.com" width="48%">
 
@@ -49,6 +49,12 @@ Klicke unten rechts auf **BOTS**. Oben im Panel stehen die zwei Lernschritte. Ö
 Klicke auf **„Follower scannen“**. Das Tool lädt deine neuesten Follower (Standard: 1.000 pro Lauf) und prüft danach automatisch ihre Profile. Weitere lädst du mit **„Nächste … laden“**.
 
 <img src="docs/anleitung/2-scannen.png" alt="Follower scannen" width="100%">
+
+Schritt 1 ist jetzt erledigt (✓), Schritt 2 noch offen:
+
+<img src="docs/anleitung/2b-schritt1-erledigt.png" alt="Schritt 1 erledigt, Schritt 2 offen" width="100%">
+
+<sub>Screenshot aus v0.12 – ab v0.13 steht bei Schritt 2 zusätzlich der Button „Testkonto öffnen“ (siehe unten).</sub>
 
 ### 3. Block-Aktion lernen
 
